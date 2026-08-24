@@ -32,7 +32,7 @@ import {
 } from "@/lib/meeting-series";
 import type { MeetingSeriesScope } from "@/lib/meeting-series";
 import type { CSSProperties, FormEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type {
   DashboardData,
   Idea,
@@ -62,8 +62,33 @@ const MEETING_REPEATS: Array<{ value: MeetingRepeat; label: string }> = [
   { value: "monthly", label: "Каждый месяц" },
   { value: "quarterly", label: "Каждый квартал" },
 ];
-const now = new Date();
-const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+// Дату «сегодня» нельзя считать на уровне модуля: страницу Next.js рендерит статически,
+// и значение застыло бы на времени сборки, а гидратация уже готовую разметку не пересчитывает.
+// Поэтому дату берём вызовом функции — в браузере она всегда отдаёт текущий день.
+// Полдень, а не полночь, — как и в parseDate: так переход на летнее время не сдвигает день.
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 12);
+}
+
+// Смена суток приходит из внешнего источника — системных часов, — поэтому текущий день
+// читаем через useSyncExternalStore. Он единственный корректно разводит два снимка:
+// серверный уходит в статическую разметку, а сразу после гидратации React перерисовывает
+// компонент с браузерным. Опрос раз в минуту нужен, чтобы вкладка пережила полночь.
+function subscribeToDayChange(onDayChange: () => void) {
+  const timer = setInterval(onDayChange, 60_000);
+  return () => clearInterval(timer);
+}
+
+// Снимок — строка "ГГГГ-ММ-ДД", а не Date: React сравнивает снимки по значению,
+// и новый объект Date на каждом вызове вызывал бы бесконечный перерендер.
+function getTodayKey() {
+  return toISO(startOfToday());
+}
 const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const MONTHS_GENITIVE = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
@@ -137,8 +162,8 @@ function pluralTasks(count: number) {
   return "задач";
 }
 
-function isTaskOverdue(task: Task) {
-  return task.status !== "Завершено" && (task.status === "Просрочено" || parseDate(task.endDate) < TODAY);
+function isTaskOverdue(task: Task, today: Date) {
+  return task.status !== "Завершено" && (task.status === "Просрочено" || parseDate(task.endDate) < today);
 }
 
 function taskOverlapsMonth(task: Task, monthStart: Date) {
@@ -228,15 +253,15 @@ function getPlannedDates(task: RegularTask, monthStartValue: string) {
 
 type RegularStatus = "Выполнено" | "С опозданием" | "Просрочено" | "Запланировано" | "Частично";
 
-function occurrenceStatus(plannedDate: string, record?: RegularRecord): RegularStatus {
+function occurrenceStatus(plannedDate: string, record: RegularRecord | undefined, today: Date): RegularStatus {
   if (record?.actualDate) return record.actualDate <= plannedDate ? "Выполнено" : "С опозданием";
-  return parseDate(plannedDate) < TODAY ? "Просрочено" : "Запланировано";
+  return parseDate(plannedDate) < today ? "Просрочено" : "Запланировано";
 }
 
-function regularMonthStatus(task: RegularTask, monthStart: string): RegularStatus | null {
+function regularMonthStatus(task: RegularTask, monthStart: string, today: Date): RegularStatus | null {
   const plannedDates = getPlannedDates(task, monthStart);
   if (plannedDates.length === 0) return null;
-  const statuses = plannedDates.map((date) => occurrenceStatus(date, task.records[date]));
+  const statuses = plannedDates.map((date) => occurrenceStatus(date, task.records[date], today));
   if (statuses.includes("Просрочено")) return "Просрочено";
   if (statuses.every((status) => status === "Выполнено")) return "Выполнено";
   if (statuses.every((status) => status === "Выполнено" || status === "С опозданием")) return "С опозданием";
@@ -546,8 +571,8 @@ function TaskDialog({
     title: "",
     assignee: "",
     status: "Не начато",
-    startDate: toISO(TODAY),
-    endDate: toISO(new Date(2026, 7, 21, 12)),
+    startDate: toISO(startOfToday()),
+    endDate: addDays(toISO(startOfToday()), 7),
     comments: [],
   });
   const [error, setError] = useState("");
@@ -676,7 +701,7 @@ function MeetingDialog({
   const [draft, setDraft] = useState<Meeting>(() => item ? { ...item, comments: [...item.comments] } : {
     id: crypto.randomUUID(),
     title: "",
-    plannedDate: defaultDate || toISO(TODAY),
+    plannedDate: defaultDate || toISO(startOfToday()),
     plannedTime: "10:00",
     participants: "",
     agenda: "",
@@ -846,7 +871,7 @@ function RegularTaskDialog({
     title: "",
     assignee: "",
     frequency: "monthly",
-    anchorDate: toISO(TODAY),
+    anchorDate: toISO(startOfToday()),
     description: "",
     records: {},
   });
@@ -909,6 +934,9 @@ function RegularPeriodDialog({
   const plannedDates = getPlannedDates(task, monthStart);
   const [records, setRecords] = useState<Record<string, RegularRecord>>(() => structuredClone(task.records));
   const monthDate = parseDate(monthStart);
+  // Карточка открывается только по клику, то есть заведомо после гидратации,
+  // поэтому дату здесь можно взять напрямую — расхождения с разметкой сервера не будет.
+  const today = startOfToday();
 
   function updateRecord(plannedDate: string, field: keyof RegularRecord, value: string) {
     setRecords((current) => ({
@@ -924,7 +952,7 @@ function RegularPeriodDialog({
           {task.description && <p className="regular-description">{task.description}</p>}
           {plannedDates.map((plannedDate) => {
             const record = records[plannedDate] || { actualDate: "", note: "" };
-            const status = occurrenceStatus(plannedDate, record);
+            const status = occurrenceStatus(plannedDate, record, today);
             return (
               <section className="regular-occurrence" key={plannedDate}>
                 <div className="regular-occurrence-head"><div><small>Нормативная дата</small><strong>{formatShortDate(plannedDate)}</strong></div><em className={regularStatusClass(status)}>{status}</em></div>
@@ -940,7 +968,7 @@ function RegularPeriodDialog({
   );
 }
 
-export default function Dashboard({ initialData }: { initialData: DashboardData }) {
+export default function Dashboard({ initialData, serverToday }: { initialData: DashboardData; serverToday: string }) {
   const [data, setData] = useState<DashboardData>(initialData);
   const [activePage, setActivePage] = useState<"roadmap" | "policy">("roadmap");
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
@@ -966,9 +994,18 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
   const [editingClient, setEditingClient] = useState(false);
   const [clientDraft, setClientDraft] = useState(initialData.clientName);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [calendarMonth, setCalendarMonth] = useState(new Date(2026, 7, 1, 12));
+  // Пока пользователь не пролистнул календарь руками, он следует за текущим месяцем.
+  // После первого ручного перехода выбор живёт здесь и больше никуда не съезжает.
+  const [pickedCalendarMonth, setPickedCalendarMonth] = useState<Date | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ganttScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Серверный снимок — дата, вшитая в статическую разметку. Совпадение с HTML снимает
+  // расхождение при гидратации, а сразу после неё React возьмёт браузерный снимок.
+  const getServerToday = useCallback(() => serverToday, [serverToday]);
+  const todayKey = useSyncExternalStore(subscribeToDayChange, getTodayKey, getServerToday);
+  const today = useMemo(() => parseDate(todayKey), [todayKey]);
+  const calendarMonth = useMemo(() => pickedCalendarMonth ?? startOfMonth(today), [pickedCalendarMonth, today]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1028,9 +1065,9 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
   const ordered = useMemo(() => orderedTasks(data.tasks), [data.tasks]);
   const filteredTasks = useMemo(() => ordered.filter((task) => {
     if (ganttFilter === "В работе") return task.status === "В работе" || task.status === "На проверке";
-    if (ganttFilter === "Просрочено") return isTaskOverdue(task);
+    if (ganttFilter === "Просрочено") return isTaskOverdue(task, today);
     return true;
-  }), [ordered, ganttFilter]);
+  }), [ordered, ganttFilter, today]);
   const visibleTasks = useMemo(() => filteredTasks.filter((task) => !task.parentId || !collapsedTaskIds.has(task.parentId)), [filteredTasks, collapsedTaskIds]);
 
   const baselineDates = useMemo(() => Object.keys(data.baselines || {}).sort(), [data.baselines]);
@@ -1070,18 +1107,18 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
   const shiftedCount = useMemo(() => (baseline ? data.tasks.filter((task) => baselineShiftOf(task)).length : 0), [baseline, data.tasks, baselineShiftOf]);
 
   const openTasks = data.tasks.filter((task) => task.status !== "Завершено");
-  const overdueCount = openTasks.filter(isTaskOverdue).length;
-  const nearestTask = [...openTasks].filter((task) => parseDate(task.endDate) >= TODAY).sort((a, b) => parseDate(a.endDate).getTime() - parseDate(b.endDate).getTime())[0];
-  const nextMeeting = [...data.meetings].filter((meeting) => meeting.status === "planned" && parseDate(meeting.plannedDate) >= TODAY).sort((a, b) => (a.plannedDate + a.plannedTime).localeCompare(b.plannedDate + b.plannedTime))[0];
+  const overdueCount = openTasks.filter((task) => isTaskOverdue(task, today)).length;
+  const nearestTask = [...openTasks].filter((task) => parseDate(task.endDate) >= today).sort((a, b) => parseDate(a.endDate).getTime() - parseDate(b.endDate).getTime())[0];
+  const nextMeeting = [...data.meetings].filter((meeting) => meeting.status === "planned" && parseDate(meeting.plannedDate) >= today).sort((a, b) => (a.plannedDate + a.plannedTime).localeCompare(b.plannedDate + b.plannedTime))[0];
 
   const planningCoverage = useMemo(() => {
     const workTasks = data.tasks.filter((task) => task.parentId || !data.tasks.some((child) => child.parentId === task.id));
     return [0, 1].map((monthOffset) => {
-      const monthStart = new Date(TODAY.getFullYear(), TODAY.getMonth() + monthOffset, 1, 12);
+      const monthStart = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1, 12);
       const count = workTasks.filter((task) => taskOverlapsMonth(task, monthStart)).length;
       return { monthStart, count, hasPlan: count > 0 };
     });
-  }, [data.tasks]);
+  }, [data.tasks, today]);
   const missingPlanMonths = planningCoverage.filter((month) => !month.hasPlan);
   const hasTwoMonthPlan = missingPlanMonths.length === 0;
   const planningMessage = hasTwoMonthPlan
@@ -1092,8 +1129,8 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
 
   const ganttRange = useMemo(() => {
     const baselineDatesInPlay = baseline ? Object.values(baseline).flatMap((base) => [parseDate(base.startDate), parseDate(base.endDate)]) : [];
-    const dates = [TODAY, ...data.tasks.flatMap((task) => [parseDate(task.startDate), parseDate(task.endDate)]), ...baselineDatesInPlay].filter((date) => !Number.isNaN(date.getTime()));
-    const minDate = dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : TODAY;
+    const dates = [today, ...data.tasks.flatMap((task) => [parseDate(task.startDate), parseDate(task.endDate)]), ...baselineDatesInPlay].filter((date) => !Number.isNaN(date.getTime()));
+    const minDate = dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : today;
     const maxDate = dates.length ? new Date(Math.max(...dates.map((date) => date.getTime()))) : new Date(2026, 8, 30, 12);
     const start = new Date(minDate.getFullYear(), minDate.getMonth(), 1, 12);
     const end = new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 0, 12);
@@ -1110,7 +1147,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
       cursor.setMonth(cursor.getMonth() + 1);
     }
     return { start, end, totalDays, months };
-  }, [data.tasks, baseline]);
+  }, [data.tasks, baseline, today]);
 
   const ideaRows = useMemo(() => {
     const search = ideaSearch.trim().toLowerCase();
@@ -1166,9 +1203,9 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
   }, [data.meetings, selectedDate, calendarMonth]);
 
   const regularMonths = useMemo(() => Array.from({ length: 12 }, (_, index) => {
-    const date = new Date(TODAY.getFullYear(), TODAY.getMonth() + index, 1, 12);
+    const date = new Date(today.getFullYear(), today.getMonth() + index, 1, 12);
     return { date, iso: toISO(date), label: MONTHS[date.getMonth()] + " " + date.getFullYear() };
-  }), []);
+  }), [today]);
   const regularRows = useMemo(() => orderedRegularTasks(data.regularTasks).filter((task) => !task.parentId || !collapsedRegularIds.has(task.parentId)), [data.regularTasks, collapsedRegularIds]);
 
   function addPerson(person: string) {
@@ -1214,7 +1251,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
 
   function focusMeetingDate(plannedDate: string) {
     setSelectedDate(plannedDate);
-    setCalendarMonth(new Date(parseDate(plannedDate).getFullYear(), parseDate(plannedDate).getMonth(), 1, 12));
+    setPickedCalendarMonth(startOfMonth(parseDate(plannedDate)));
   }
 
   // Поля, одинаковые для всей серии: если правка их не трогает (например, встречу просто
@@ -1357,7 +1394,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
   }
 
   function moveCalendarMonth(offset: number) {
-    setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1, 12));
+    setPickedCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + offset, 1, 12));
     setSelectedDate(null);
   }
 
@@ -1370,20 +1407,20 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
     };
   }
 
-  const todayPercent = (Math.round((TODAY.getTime() - ganttRange.start.getTime()) / 86400000) / ganttRange.totalDays) * 100;
+  const todayPercent = (Math.round((today.getTime() - ganttRange.start.getTime()) / 86400000) / ganttRange.totalDays) * 100;
   const ganttTimelineWidth = Math.max(760, ganttRange.months.length * 300);
   const weekLineCount = Math.ceil(ganttRange.totalDays / 7) + 1;
   const calendarDefaultDate = selectedDate || toISO(new Date(
     calendarMonth.getFullYear(),
     calendarMonth.getMonth(),
-    calendarMonth.getFullYear() === TODAY.getFullYear() && calendarMonth.getMonth() === TODAY.getMonth() ? TODAY.getDate() : 1,
+    calendarMonth.getFullYear() === today.getFullYear() && calendarMonth.getMonth() === today.getMonth() ? today.getDate() : 1,
     12
   ));
 
   function scrollGanttToToday() {
     const scroller = ganttScrollRef.current;
     if (!scroller) return;
-    const currentMonthStart = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1, 12);
+    const currentMonthStart = startOfMonth(today);
     const daysFromRangeStart = Math.max(0, Math.round((currentMonthStart.getTime() - ganttRange.start.getTime()) / 86400000));
     const monthPosition = daysFromRangeStart / ganttRange.totalDays * ganttTimelineWidth;
     scroller.scrollTo({ left: Math.max(0, monthPosition - 16), behavior: "smooth" });
@@ -1497,7 +1534,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
                     type="date"
                     value={baselineDate}
                     min={baselineDates[0]}
-                    max={toISO(TODAY)}
+                    max={toISO(today)}
                     onChange={(event) => setBaselineDate(event.target.value)}
                   />
                   <small className="baseline-hint">
@@ -1534,7 +1571,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
                     {task.comments.length > 0 && <small><MessageSquareText size={12} />{task.comments.length}</small>}
                   </span>
                   <span className="assignee-cell">{task.assignee || "—"}</span>
-                  <span><em className={taskStatusClass(isTaskOverdue(task) ? "Просрочено" : task.status)}>{isTaskOverdue(task) ? "Просрочено" : task.status}</em></span>
+                  <span><em className={taskStatusClass(isTaskOverdue(task, today) ? "Просрочено" : task.status)}>{isTaskOverdue(task, today) ? "Просрочено" : task.status}</em></span>
                   <span className="deadline-cell">{formatShortDate(task.endDate)}<MoreHorizontal size={15} /></span>
                 </div>
               );
@@ -1555,7 +1592,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
                     : undefined;
                   return (
                     <div className="gantt-row" key={task.id}>
-                      <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)}><span>{task.title}</span><i /></button>
+                      <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task, today) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)}><span>{task.title}</span><i /></button>
                       {shift?.segments.map((segment) => <i key={segment.id} className={"gantt-delta" + (segment.inside ? "" : " gantt-delta-outside") + (task.parentId ? "" : " gantt-delta-parent")} style={ganttBarStyle(segment.from, segment.to)} title={shiftTitle} />)}
                     </div>
                   );
@@ -1601,7 +1638,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
                   const fillClass = cell.hasPlan && cell.hasFact ? "day-plan-fact" : cell.hasFact ? "day-fact" : cell.hasPlan ? "day-plan" : "";
                   return <button key={cell.iso} className={"calendar-day " + fillClass + (cell.inMonth ? "" : " outside") + (selectedDate === cell.iso ? " selected" : "")} onClick={() => {
                     setSelectedDate((current) => current === cell.iso ? null : cell.iso);
-                    if (!cell.inMonth) setCalendarMonth(new Date(cell.date.getFullYear(), cell.date.getMonth(), 1, 12));
+                    if (!cell.inMonth) setPickedCalendarMonth(startOfMonth(cell.date));
                   }} aria-pressed={selectedDate === cell.iso} aria-label={cell.count ? cell.count + " встреч на " + formatShortDate(cell.iso) : "Нет встреч на " + formatShortDate(cell.iso)}><span>{cell.date.getDate()}</span>{cell.count > 1 && <em>{cell.count}</em>}</button>;
                 })}
               </div>
@@ -1664,7 +1701,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
                   {regularMonths.map((month) => {
                     const plannedDates = getPlannedDates(task, month.iso);
                     const actualDates = plannedDates.map((date) => task.records[date]?.actualDate).filter(Boolean);
-                    const status = regularMonthStatus(task, month.iso);
+                    const status = regularMonthStatus(task, month.iso, today);
                     const hasNote = plannedDates.some((date) => Boolean(task.records[date]?.note));
                     return (
                       <button className={"regular-month-cell " + (status ? "has-occurrence" : "is-empty")} disabled={!status} key={month.iso} onClick={() => setModal({ kind: "regular-period", task, monthStart: month.iso })}>
