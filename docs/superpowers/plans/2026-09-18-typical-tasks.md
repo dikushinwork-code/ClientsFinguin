@@ -53,7 +53,7 @@
 **Interfaces:**
 - Produces: `Checkpoint`, `CheckpointGroup`, `Task.template?`, `Task.groups?` в `lib/types.ts`; `startOfWeek(value: string): string`, `nextMonday(value: string): string`, `weekdayName(value: string): string` в `lib/dates.ts`; скрипт `pnpm test`.
 
-- [ ] **Step 1: Установить vitest и добавить скрипт**
+- [x] **Step 1: Установить vitest и добавить скрипт**
 
 ```bash
 pnpm add -D vitest
@@ -61,7 +61,7 @@ pnpm add -D vitest
 
 В `package.json` в `scripts` добавить строку `"test": "vitest run"` (после `"lint"`). Vitest читает `.ts` без настройки; тесты используют относительные импорты, а не алиас `@/`.
 
-- [ ] **Step 2: Написать падающий тест на помощники дат**
+- [x] **Step 2: Написать падающий тест на помощники дат**
 
 Создать `lib/dates.test.ts`:
 
@@ -93,12 +93,12 @@ describe("weekdayName", () => {
 });
 ```
 
-- [ ] **Step 3: Убедиться, что тест падает**
+- [x] **Step 3: Убедиться, что тест падает**
 
 Run: `pnpm test lib/dates.test.ts`
 Expected: FAIL — `nextMonday`, `startOfWeek`, `weekdayName` не экспортируются.
 
-- [ ] **Step 4: Добавить помощники в `lib/dates.ts`**
+- [x] **Step 4: Добавить помощники в `lib/dates.ts`**
 
 Дописать в конец файла:
 
@@ -124,7 +124,7 @@ export function weekdayName(value: string) {
 }
 ```
 
-- [ ] **Step 5: Добавить типы в `lib/types.ts`**
+- [x] **Step 5: Добавить типы в `lib/types.ts`**
 
 После `export interface BaselineTask { ... }` и перед `Baselines` вставить:
 
@@ -162,12 +162,12 @@ export interface TaskTemplateRef {
   groups?: CheckpointGroup[];
 ```
 
-- [ ] **Step 6: Прогнать тесты, линтер и сборку**
+- [x] **Step 6: Прогнать тесты, линтер и сборку**
 
 Run: `pnpm test && pnpm lint && pnpm build`
 Expected: тесты PASS, линтер и сборка без ошибок.
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add package.json pnpm-lock.yaml lib/types.ts lib/dates.ts lib/dates.test.ts
@@ -197,7 +197,7 @@ export class TypicalTasksFormatError extends Error { line: number }
 export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[];
 ```
 
-- [ ] **Step 1: Написать падающие тесты по реальному файлу**
+- [x] **Step 1: Написать падающие тесты по реальному файлу**
 
 Создать `lib/typical-tasks.test.ts`:
 
@@ -295,12 +295,12 @@ describe("parseTypicalTasks: ошибки формата", () => {
 });
 ```
 
-- [ ] **Step 2: Убедиться, что тесты падают**
+- [x] **Step 2: Убедиться, что тесты падают**
 
 Run: `pnpm test lib/typical-tasks.test.ts`
 Expected: FAIL — модуль `./typical-tasks` не найден.
 
-- [ ] **Step 3: Написать парсер**
+- [x] **Step 3: Написать парсер**
 
 Создать `lib/typical-tasks.ts`:
 
@@ -492,12 +492,12 @@ export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[] {
 }
 ```
 
-- [ ] **Step 4: Убедиться, что тесты проходят**
+- [x] **Step 4: Убедиться, что тесты проходят**
 
 Run: `pnpm test lib/typical-tasks.test.ts`
 Expected: PASS. Если тест на реальный файл падает из-за расхождения с ожидаемыми числами — сначала пересчитать вручную по `docs/typical-tasks.md`, а не подгонять парсер.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add lib/typical-tasks.ts lib/typical-tasks.test.ts
@@ -527,7 +527,7 @@ export function nextCheckpointCode(task: Task): string;
 export function countCheckpoints(template: TypicalTaskTemplate): number;
 ```
 
-- [ ] **Step 1: Дописать падающие тесты**
+- [x] **Step 1: Дописать падающие тесты**
 
 В конец `lib/typical-tasks.test.ts` добавить (импорт расширить: `import { checkpointProgress, countCheckpoints, expandTemplate, nextCheckpointCode, parseTypicalTasks, scheduleTemplate, TypicalTasksFormatError } from "./typical-tasks";` и `import type { Task } from "./types";`):
 
@@ -605,12 +605,12 @@ describe("checkpointProgress и nextCheckpointCode", () => {
 });
 ```
 
-- [ ] **Step 2: Убедиться, что тесты падают**
+- [x] **Step 2: Убедиться, что тесты падают**
 
 Run: `pnpm test lib/typical-tasks.test.ts`
 Expected: FAIL — функции не экспортируются.
 
-- [ ] **Step 3: Реализовать функции**
+- [x] **Step 3: Реализовать функции**
 
 В начало `lib/typical-tasks.ts` добавить импорты:
 
@@ -718,12 +718,12 @@ export function nextCheckpointCode(task: Task) {
 }
 ```
 
-- [ ] **Step 4: Убедиться, что тесты проходят**
+- [x] **Step 4: Убедиться, что тесты проходят**
 
 Run: `pnpm test`
 Expected: PASS.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add lib/typical-tasks.ts lib/typical-tasks.test.ts
@@ -744,11 +744,11 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: `parseTypicalTasks` из Task 2.
 - Produces: проп `templates: TypicalTaskTemplate[]` у `Dashboard`.
 
-- [ ] **Step 1: Проверить по документации Next, что серверный компонент может быть async и читать файлы при сборке**
+- [x] **Step 1: Проверить по документации Next, что серверный компонент может быть async и читать файлы при сборке**
 
 Прочитать `node_modules/next/dist/docs/01-app/01-getting-started/` (файл про server components / fetching data) и убедиться, что `export default async function Page()` допустим. Страница остаётся статической: `fs.readFile` выполняется при сборке, поэтому трассировка файлов (`outputFileTracingIncludes`) не нужна — документация `output.md` прямо говорит, что полностью статические страницы ею не затрагиваются.
 
-- [ ] **Step 2: Читать и разбирать файл в `app/page.tsx`**
+- [x] **Step 2: Читать и разбирать файл в `app/page.tsx`**
 
 Заменить содержимое файла:
 
@@ -777,7 +777,7 @@ export default async function Page() {
 }
 ```
 
-- [ ] **Step 3: Принять проп в `Dashboard`**
+- [x] **Step 3: Принять проп в `Dashboard`**
 
 В `components/dashboard.tsx` добавить импорт `import type { TypicalTaskTemplate } from "@/lib/typical-tasks";` и заменить сигнатуру:
 
@@ -787,12 +787,12 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
 
 Чтобы линтер не ругался на неиспользуемый проп до Task 6, временно ничего не делать — ESLint по умолчанию не ругается на неиспользуемые деструктурированные пропсы в Next-конфиге; если ругается, оставить строку `void templates;` с комментарием `// используется в диалоге типовой задачи (Task 6)` и убрать её в Task 6.
 
-- [ ] **Step 4: Линтер и сборка**
+- [x] **Step 4: Линтер и сборка**
 
 Run: `pnpm lint && pnpm build`
 Expected: без ошибок; в выводе сборки страница `/` помечена как статическая (символ `○`).
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add app/page.tsx components/dashboard.tsx
@@ -815,7 +815,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `export default function ModalShell({ title, subtitle, children, onClose })`; `export default function PersonSelect({ value, onChange, people, onAddPerson, onDeletePerson })`; `export function normalizePerson(value: string): string`; `export type PersonPickerProps`.
 
-- [ ] **Step 1: Создать `components/modal-shell.tsx`**
+- [x] **Step 1: Создать `components/modal-shell.tsx`**
 
 Перенести функцию `ModalShell` из `dashboard.tsx` (строки 505–541) дословно:
 
@@ -864,7 +864,7 @@ export default function ModalShell({
 }
 ```
 
-- [ ] **Step 2: Создать `components/person-select.tsx`**
+- [x] **Step 2: Создать `components/person-select.tsx`**
 
 Перенести `normalizePerson`, `PersonPickerProps` и `PersonSelect` (строки 280–378) дословно, добавив экспорт и импорты:
 
@@ -889,7 +889,7 @@ export default function PersonSelect({ ...как в dashboard.tsx, тело бе
 
 (Тело `PersonSelect` скопировать целиком из `dashboard.tsx`, оно не меняется.)
 
-- [ ] **Step 3: Удалить перенесённое из `dashboard.tsx` и импортировать**
+- [x] **Step 3: Удалить перенесённое из `dashboard.tsx` и импортировать**
 
 В `dashboard.tsx` удалить `normalizePerson`, `PersonPickerProps`, `PersonSelect`, `ModalShell`. Добавить импорты:
 
@@ -901,16 +901,16 @@ import type { PersonPickerProps } from "@/components/person-select";
 
 `splitPeople`, `mergePeople`, `PeopleSelect` остаются в `dashboard.tsx` и используют импортированный `normalizePerson`. Если после удаления какие-то иконки lucide в `dashboard.tsx` перестали использоваться (`Check`), убрать их из импорта — линтер подскажет.
 
-- [ ] **Step 4: Линтер и сборка**
+- [x] **Step 4: Линтер и сборка**
 
 Run: `pnpm lint && pnpm build`
 Expected: без ошибок и предупреждений о неиспользуемых импортах.
 
-- [ ] **Step 5: Ручная проверка**
+- [x] **Step 5: Ручная проверка**
 
 Run: `pnpm dev`, открыть http://localhost:3000, нажать «Новая задача»: окно открывается, Esc закрывает, выбор ответственного работает (выпадающий список, добавление нового имени).
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add components/modal-shell.tsx components/person-select.tsx components/dashboard.tsx
@@ -932,7 +932,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: `ModalShell`, `PersonSelect`, `PersonPickerProps` (Task 5); `scheduleTemplate`, `expandTemplate`, `countCheckpoints`, `TypicalTaskTemplate` (Tasks 2–3); `nextMonday`, `startOfWeek`, `weekdayName`, `isValidDateValue`, `parseDate` (`lib/dates.ts`).
 - Produces: `TemplateDialog` с пропсами `{ templates, tasks, people, today, onAddPerson, onDeletePerson, onClose, onAdd: (tasks: Task[]) => void }`; в дашборде `ModalState` получает вариант `{ kind: "template" }`, функция `addTemplateTasks(newTasks: Task[])`, `scrollGanttToDate(value: string)`.
 
-- [ ] **Step 1: Написать `components/template-dialog.tsx`**
+- [x] **Step 1: Написать `components/template-dialog.tsx`**
 
 ```tsx
 "use client";
@@ -1062,7 +1062,7 @@ export default function TemplateDialog({
 }
 ```
 
-- [ ] **Step 2: Подключить диалог в `dashboard.tsx`**
+- [x] **Step 2: Подключить диалог в `dashboard.tsx`**
 
 1. Импорты: `import TemplateDialog from "@/components/template-dialog";` и иконку `ClipboardCheck` в импорт из `lucide-react`.
 2. В `ModalState` добавить вариант `| { kind: "template" }`.
@@ -1109,7 +1109,7 @@ export default function TemplateDialog({
 
 7. Убрать `void templates;`, если добавляли в Task 4.
 
-- [ ] **Step 3: Стили в `app/globals.css`**
+- [x] **Step 3: Стили в `app/globals.css`**
 
 Добавить после блока `.baseline-reset { ... }`:
 
@@ -1158,7 +1158,7 @@ export default function TemplateDialog({
 
 В медиазапросе для узких экранов (в конце файла, где `.roadmap-actions > .secondary, .roadmap-actions > .primary { width: calc(50% - 5px); }`) добавить `.tpl-preview-row, .tpl-row { grid-template-columns: 1fr; gap: 2px; }`.
 
-- [ ] **Step 4: Линтер, сборка, ручная проверка**
+- [x] **Step 4: Линтер, сборка, ручная проверка**
 
 Run: `pnpm lint && pnpm build && pnpm dev`
 
@@ -1168,7 +1168,7 @@ Run: `pnpm lint && pnpm build && pnpm dev`
 3. Шаг 2: дата по умолчанию — ближайший понедельник; при выборе четверга появляется предупреждение и кнопка сдвига; предпросмотр показывает 3 строки и итог.
 4. «Добавить в карту»: в таблице появляются 4 строки (пока без чипов — это Task 7), Гант прокручивается к месяцу старта, индикатор сохранения показывает «сохранено». После перезагрузки страницы задачи на месте.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add components/template-dialog.tsx components/dashboard.tsx app/globals.css
@@ -1189,7 +1189,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: `checkpointProgress` (Task 3).
 - Produces: `export function ProgressRing({ done, total }: { done: number; total: number })` в `components/checkpoints-editor.tsx`.
 
-- [ ] **Step 1: Создать `components/checkpoints-editor.tsx` с `ProgressRing`**
+- [x] **Step 1: Создать `components/checkpoints-editor.tsx` с `ProgressRing`**
 
 ```tsx
 "use client";
@@ -1208,7 +1208,7 @@ export function ProgressRing({ done, total }: { done: number; total: number }) {
 }
 ```
 
-- [ ] **Step 2: Чипы и прогресс в строке таблицы**
+- [x] **Step 2: Чипы и прогресс в строке таблицы**
 
 В `dashboard.tsx` импортировать `import { ProgressRing } from "@/components/checkpoints-editor";` и `import { checkpointProgress } from "@/lib/typical-tasks";`.
 
@@ -1227,7 +1227,7 @@ export function ProgressRing({ done, total }: { done: number; total: number }) {
                   </span>
 ```
 
-- [ ] **Step 3: Подсказка на полоске Ганта**
+- [x] **Step 3: Подсказка на полоске Ганта**
 
 В `visibleTasks.map` внутри `gantt-bars` вычислить `const progress = checkpointProgress(task, data.tasks);` и добавить полоске атрибут:
 
@@ -1235,13 +1235,13 @@ export function ProgressRing({ done, total }: { done: number; total: number }) {
 title={task.title + " · " + formatShortDate(task.startDate) + " — " + formatShortDate(task.endDate) + (progress && progress.total > 0 ? " · точки " + progress.done + "/" + progress.total : "")}
 ```
 
-- [ ] **Step 4: Линтер, сборка, ручная проверка**
+- [x] **Step 4: Линтер, сборка, ручная проверка**
 
 Run: `pnpm lint && pnpm build && pnpm dev`
 
 В браузере: у добавленной в Task 6 задачи ДДС — тёмный чип «ДДС» на надзадаче и светлые «ДДС-1…3» на подзадачах, прогресс «0/9», «0/5», «0/2» и «0/16» у надзадачи; при наведении на полоску Ганта видна подсказка с датами и точками. Обычные задачи выглядят как раньше.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add components/checkpoints-editor.tsx components/dashboard.tsx
@@ -1262,7 +1262,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: `Checkpoint`, `CheckpointGroup` (Task 1).
 - Produces: `export default function CheckpointsEditor({ groups, nextCode, onChange }: { groups: CheckpointGroup[]; nextCode: () => string; onChange: (groups: CheckpointGroup[]) => void })`. Компонент не хранит данные — только состояние правки; все изменения уходят наверх через `onChange` новыми массивами.
 
-- [ ] **Step 1: Дописать компонент**
+- [x] **Step 1: Дописать компонент**
 
 В `components/checkpoints-editor.tsx` добавить импорты и компонент:
 
@@ -1385,7 +1385,7 @@ export default function CheckpointsEditor({
 }
 ```
 
-- [ ] **Step 2: Стили**
+- [x] **Step 2: Стили**
 
 Добавить в `app/globals.css` после стилей `.modal-back`:
 
@@ -1446,12 +1446,12 @@ export default function CheckpointsEditor({
 
 `!important` у `.info-button` нужен, потому что `.check-tools button` задаёт более общие правила той же специфичности позже по порядку; если при вёрстке удобнее — вместо `!important` поднять специфичность селектором `.check-tools .info-button`.
 
-- [ ] **Step 3: Линтер и сборка**
+- [x] **Step 3: Линтер и сборка**
 
 Run: `pnpm lint && pnpm build`
 Expected: без ошибок. Компонент пока нигде не используется — это нормально, подключение в Task 9.
 
-- [ ] **Step 4: Коммит**
+- [x] **Step 4: Коммит**
 
 ```bash
 git add components/checkpoints-editor.tsx app/globals.css
@@ -1471,7 +1471,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: `CheckpointsEditor`, `ProgressRing` (Tasks 7–8); `checkpointProgress`, `nextCheckpointCode` (Task 3).
 - Produces: `TaskDialog` получает проп `onOpenTask: (task: Task) => void`.
 
-- [ ] **Step 1: Расширить пропсы и режимы**
+- [x] **Step 1: Расширить пропсы и режимы**
 
 В сигнатуру `TaskDialog` добавить `onOpenTask: (task: Task) => void;` и вычислить режимы сразу после `hasChildren`:
 
@@ -1510,7 +1510,7 @@ function pluralSprints(count: number) {
 }
 ```
 
-- [ ] **Step 2: Перестроить форму**
+- [x] **Step 2: Перестроить форму**
 
 Заменить JSX внутри `<form onSubmit={submit}>` так:
 
@@ -1565,7 +1565,7 @@ function pluralSprints(count: number) {
 
 Импорты в начале файла: `import CheckpointsEditor, { ProgressRing } from "@/components/checkpoints-editor";` (заменяет импорт из Task 7) и `import { checkpointProgress, nextCheckpointCode } from "@/lib/typical-tasks";` (расширяет импорт из Task 7).
 
-- [ ] **Step 3: Передать `onOpenTask` при рендере**
+- [x] **Step 3: Передать `onOpenTask` при рендере**
 
 ```tsx
       {modal?.kind === "task" && <TaskDialog item={modal.item} tasks={data.tasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} onOpenTask={(task) => setModal({ kind: "task", item: task })} />}
@@ -1573,7 +1573,7 @@ function pluralSprints(count: number) {
 
 Переход из карточки надзадачи в карточку спринта без сохранения надзадачи — сознательно: правки надзадачи, если они были, теряются, как при закрытии окна. Это соответствует макету.
 
-- [ ] **Step 4: Линтер, сборка, ручная проверка по макету**
+- [x] **Step 4: Линтер, сборка, ручная проверка по макету**
 
 Run: `pnpm lint && pnpm build && pnpm dev`
 
@@ -1587,7 +1587,7 @@ Run: `pnpm lint && pnpm build && pnpm dev`
 8. У обычной задачи («Сбор исходных данных») форма выглядит как раньше: тип задачи, надзадача, статус внизу.
 9. Удалить надзадачу ДДС — вместе с подзадачами.
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add components/dashboard.tsx
@@ -1603,7 +1603,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Раздел в README**
+- [x] **Step 1: Раздел в README**
 
 После списка «Возможности» добавить пункт `- типовые задачи: шаблон из справочника разворачивается в надзадачу, недельные спринты и чек-лист контрольных точек с пояснениями;`. Перед разделом «Локальный запуск» добавить:
 
@@ -1617,16 +1617,16 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 В раздел «Проверка перед публикацией» добавить `pnpm test` первой строкой.
 
-- [ ] **Step 2: Полная проверка**
+- [x] **Step 2: Полная проверка**
 
 Run: `pnpm test && pnpm lint && pnpm build`
 Expected: все тесты PASS, линтер и сборка чистые.
 
-- [ ] **Step 3: Сквозной сценарий**
+- [x] **Step 3: Сквозной сценарий**
 
 `pnpm dev`, затем: добавить ФМ со стартом в четверг → нажать «Сдвинуть на понедельник» → добавить → открыть ФМ-1 → раскрыть пояснение у 1.4 → отметить 1.1–1.10 → сохранить → в таблице «10/22» → перезагрузить страницу → отметки сохранены → удалить надзадачу ФМ → строки исчезли.
 
-- [ ] **Step 4: Коммит**
+- [x] **Step 4: Коммит**
 
 ```bash
 git add README.md
