@@ -22,6 +22,11 @@ describe("formatDayMonth", () => {
     expect(formatDayMonth("2026-09-05")).toBe("05.09");
     expect(formatDayMonth("2026-10-11")).toBe("11.10");
   });
+
+  it("показывает прочерк вместо неразобранной даты", () => {
+    expect(formatDayMonth("")).toBe("—");
+    expect(formatDayMonth("не дата")).toBe("—");
+  });
 });
 
 describe("weekdayName", () => {

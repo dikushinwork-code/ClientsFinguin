@@ -29,6 +29,7 @@ import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
 import TemplateDialog from "@/components/template-dialog";
 import { addDays, differenceInDays, formatDayMonth, parseDate, toISO } from "@/lib/dates";
+import { plural } from "@/lib/plural";
 import {
   frequencyTitle,
   getScopeCounts,
@@ -145,47 +146,30 @@ function getMeetingRepeatDates(startValue: string, repeat: MeetingRepeat) {
 }
 
 function pluralMeetings(count: number) {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return "встреч";
-  if (last === 1) return "встреча";
-  if (last >= 2 && last <= 4) return "встречи";
-  return "встреч";
+  return plural(count, "встреча", "встречи", "встреч");
 }
 
 function pluralDays(count: number) {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return "дней";
-  if (last === 1) return "день";
-  if (last >= 2 && last <= 4) return "дня";
-  return "дней";
+  return plural(count, "день", "дня", "дней");
 }
 
 function pluralTasks(count: number) {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return "задач";
-  if (last === 1) return "задача";
-  if (last >= 2 && last <= 4) return "задачи";
-  return "задач";
+  return plural(count, "задача", "задачи", "задач");
 }
 
 function pluralSprints(count: number) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return "спринт";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "спринта";
-  return "спринтов";
+  return plural(count, "спринт", "спринта", "спринтов");
 }
 
 function pluralSubtasks(count: number) {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return "подзадач";
-  if (last === 1) return "подзадача";
-  if (last >= 2 && last <= 4) return "подзадачи";
-  return "подзадач";
+  return plural(count, "подзадача", "подзадачи", "подзадач");
+}
+
+// Спринты типовой задачи — только подзадачи с кодом спринта, по порядку недель.
+function templateSprints(tasks: Task[], parentId: string | null) {
+  return tasks
+    .filter((task) => task.parentId === parentId && task.template?.subCode)
+    .sort((a, b) => (a.template?.week ?? 0) - (b.template?.week ?? 0));
 }
 
 function isTaskOverdue(task: Task, today: Date) {
@@ -486,7 +470,7 @@ function TaskDialog({
 
   const isTemplateSprint = Boolean(item?.template?.subCode);
   const isTemplateParent = Boolean(item?.template) && !isTemplateSprint;
-  const sprints = isTemplateParent && item ? tasks.filter((task) => task.parentId === item.id) : [];
+  const sprints = isTemplateParent && item ? templateSprints(tasks, item.id) : [];
   const sprintItems = isTemplateSprint ? (draft.groups ?? []).flatMap((group) => group.items) : [];
   const sprintAllDone = sprintItems.length > 0 && sprintItems.every((checkpoint) => checkpoint.done);
   const parentProgress = isTemplateParent && item ? checkpointProgress(item, tasks) ?? { done: 0, total: 0 } : { done: 0, total: 0 };
@@ -495,7 +479,7 @@ function TaskDialog({
     ? (item.template.subCode || item.template.code) + ". " + draft.title
     : item ? "Редактировать задачу" : "Новая задача";
   const dialogSubtitle = isTemplateSprint && item
-    ? "Типовая задача " + item.template!.code + " · спринт " + item.template!.week + " из " + tasks.filter((task) => task.parentId === item.parentId && task.template?.subCode).length + " · неделя " + formatDayMonth(draft.startDate) + " — " + formatDayMonth(draft.endDate)
+    ? "Типовая задача " + item.template!.code + " · спринт " + item.template!.week + " из " + templateSprints(tasks, item.parentId).length + " · неделя " + formatDayMonth(draft.startDate) + " — " + formatDayMonth(draft.endDate)
     : isTemplateParent
       ? "Типовая задача · " + sprints.length + " " + pluralSprints(sprints.length) + " · " + formatDayMonth(draft.startDate) + " — " + formatDayMonth(draft.endDate) + " · контрольных точек " + parentProgress.done + " из " + parentProgress.total
       : "Сроки сразу появятся на диаграмме Ганта";
@@ -1213,6 +1197,9 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
       tasks: [...current.tasks, ...newTasks],
     }));
     setModal(null);
+    // Под фильтром «В работе» или «Просрочено» новые строки не прошли бы отбор,
+    // поэтому показываем всю дорожную карту — задача должна быть видна сразу.
+    setGanttFilter("Все");
     // Гант ещё не знает про новые задачи — реальную прокрутку делаем в эффекте,
     // когда ganttRange и ширина таймлайна пересчитаются от обновлённого data.tasks.
     pendingScrollDateRef.current = newTasks[0].startDate;
@@ -1750,7 +1737,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
       )}
       {modal?.kind === "regular-task" && <RegularTaskDialog item={modal.item} tasks={data.regularTasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveRegularTask} onDelete={deleteRegularTask} />}
       {modal?.kind === "regular-period" && <RegularPeriodDialog task={modal.task} monthStart={modal.monthStart} onClose={() => setModal(null)} onSave={saveRegularTask} />}
-      <div className={"toast" + (toast ? " show" : "")}>{toast}</div>
+      <div className={"toast" + (toast ? " show" : "")} role="status" aria-live="polite">{toast}</div>
     </main>
   );
 }

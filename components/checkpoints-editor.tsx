@@ -105,7 +105,7 @@ export default function CheckpointsEditor({
                 <label>Контрольная точка<input autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="Что должно быть сделано" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); finishEdit(item); } }} /></label>
                 <label>Пояснение для ФД (необязательно)<textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} placeholder="Зачем нужен пункт, что считается выполненным, какие ошибки предотвращает" /></label>
                 <div className="check-edit-actions">
-                  <button type="button" className="delete-button" onClick={() => patchItem(item.code, null)}>Удалить</button>
+                  <button type="button" className="delete-button" onClick={() => { patchItem(item.code, null); setEditing(null); }}>Удалить</button>
                   <button type="button" className="secondary" onClick={() => cancelEdit(item)}>Отмена</button>
                   <button type="button" className="primary" onClick={() => finishEdit(item)}>Готово</button>
                 </div>
