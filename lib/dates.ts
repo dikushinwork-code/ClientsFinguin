@@ -41,3 +41,23 @@ export function isLastDayOfMonth(date: Date) {
 export function monthsBetween(from: Date, to: Date) {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
 }
+
+const WEEKDAY_NAMES = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+
+// Понедельник недели, в которую попадает дата.
+export function startOfWeek(value: string) {
+  const date = parseDate(value);
+  date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+  return toISO(date);
+}
+
+// Ближайший понедельник: сама дата, если это понедельник, иначе следующий.
+export function nextMonday(value: string) {
+  const date = parseDate(value);
+  date.setDate(date.getDate() + (8 - date.getDay()) % 7);
+  return toISO(date);
+}
+
+export function weekdayName(value: string) {
+  return WEEKDAY_NAMES[parseDate(value).getDay()];
+}
