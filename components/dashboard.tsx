@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import AccountingPolicy from "@/components/accounting-policy";
-import { ProgressRing } from "@/components/checkpoints-editor";
+import CheckpointsEditor, { ProgressRing } from "@/components/checkpoints-editor";
 import ModalShell from "@/components/modal-shell";
 import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
@@ -52,7 +52,7 @@ import type {
   Task,
   TaskStatus,
 } from "@/lib/types";
-import { checkpointProgress } from "@/lib/typical-tasks";
+import { checkpointProgress, nextCheckpointCode } from "@/lib/typical-tasks";
 import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
 
 const TASK_STATUSES: TaskStatus[] = ["Не начато", "В работе", "На проверке", "Завершено", "Просрочено"];
@@ -169,6 +169,14 @@ function pluralTasks(count: number) {
   if (last === 1) return "задача";
   if (last >= 2 && last <= 4) return "задачи";
   return "задач";
+}
+
+function pluralSprints(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return "спринт";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "спринта";
+  return "спринтов";
 }
 
 function pluralSubtasks(count: number) {
@@ -452,6 +460,7 @@ function TaskDialog({
   onClose,
   onSave,
   onDelete,
+  onOpenTask,
 }: {
   item: Task | null;
   tasks: Task[];
@@ -461,6 +470,7 @@ function TaskDialog({
   onClose: () => void;
   onSave: (task: Task) => void;
   onDelete: (id: string) => void;
+  onOpenTask: (task: Task) => void;
 }) {
   const parents = tasks.filter((task) => !task.parentId && task.id !== item?.id);
   const hasChildren = item ? tasks.some((task) => task.parentId === item.id) : false;
@@ -480,6 +490,22 @@ function TaskDialog({
   });
   const [error, setError] = useState("");
 
+  const isTemplateSprint = Boolean(item?.template?.subCode);
+  const isTemplateParent = Boolean(item?.template) && !isTemplateSprint;
+  const sprints = isTemplateParent && item ? tasks.filter((task) => task.parentId === item.id) : [];
+  const sprintItems = isTemplateSprint ? (draft.groups ?? []).flatMap((group) => group.items) : [];
+  const sprintAllDone = sprintItems.length > 0 && sprintItems.every((checkpoint) => checkpoint.done);
+  const parentProgress = isTemplateParent && item ? checkpointProgress(item, tasks) ?? { done: 0, total: 0 } : { done: 0, total: 0 };
+
+  const dialogTitle = item?.template
+    ? (item.template.subCode || item.template.code) + ". " + draft.title
+    : item ? "Редактировать задачу" : "Новая задача";
+  const dialogSubtitle = isTemplateSprint && item
+    ? "Типовая задача " + item.template!.code + " · спринт " + item.template!.week + " из " + tasks.filter((task) => task.parentId === item.parentId && task.template?.subCode).length + " · неделя " + formatShortDate(draft.startDate) + " — " + formatShortDate(draft.endDate)
+    : isTemplateParent
+      ? "Типовая задача · " + sprints.length + " " + pluralSprints(sprints.length) + " · " + formatShortDate(draft.startDate) + " — " + formatShortDate(draft.endDate) + " · контрольных точек " + parentProgress.done + " из " + parentProgress.total
+      : "Сроки сразу появятся на диаграмме Ганта";
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft.title.trim()) return setError("Укажите название задачи.");
@@ -487,26 +513,53 @@ function TaskDialog({
     if (!draft.startDate || !draft.endDate || parseDate(draft.startDate) > parseDate(draft.endDate)) {
       return setError("Проверьте даты начала и окончания.");
     }
-    onSave({ ...draft, parentId: taskType === "parent" ? null : draft.parentId, title: draft.title.trim(), assignee: draft.assignee.trim() });
+    onSave({ ...draft, parentId: item?.template ? draft.parentId : taskType === "parent" ? null : draft.parentId, title: draft.title.trim(), assignee: draft.assignee.trim() });
   }
 
   return (
-    <ModalShell title={item ? "Редактировать задачу" : "Новая задача"} subtitle="Сроки сразу появятся на диаграмме Ганта" onClose={onClose}>
+    <ModalShell title={dialogTitle} subtitle={dialogSubtitle} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="modal-body">
-          <label className="field field-wide">Название задачи<input autoFocus value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Например, Подготовить форму ДДС" /></label>
+          <label className="field field-wide">{isTemplateSprint ? "Название подзадачи" : "Название задачи"}<input autoFocus={!item} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Например, Подготовить форму ДДС" /></label>
           <div className="form-grid">
-            <label className="field">Тип задачи<select value={taskType} onChange={(event) => {
+            {!item?.template && <label className="field">Тип задачи<select value={taskType} onChange={(event) => {
               const value = event.target.value as "parent" | "subtask";
               setTaskType(value);
               if (value === "parent") setDraft({ ...draft, parentId: null });
-            }}><option value="subtask" disabled={parents.length === 0 || hasChildren}>Подзадача</option><option value="parent">Надзадача</option></select><ChevronDown size={15} /></label>
+            }}><option value="subtask" disabled={parents.length === 0 || hasChildren}>Подзадача</option><option value="parent">Надзадача</option></select><ChevronDown size={15} /></label>}
             <div className="field"><span>Ответственный</span><PersonSelect value={draft.assignee} onChange={(assignee) => setDraft({ ...draft, assignee })} people={people} onAddPerson={onAddPerson} onDeletePerson={onDeletePerson} /></div>
-            {taskType === "subtask" && <label className="field field-wide">К какой надзадаче прикрепить<select value={draft.parentId || ""} onChange={(event) => setDraft({ ...draft, parentId: event.target.value || null })}><option value="">Выберите надзадачу</option>{parents.map((task) => <option value={task.id} key={task.id}>{task.title}</option>)}</select><ChevronDown size={15} /></label>}
+            {!item?.template && taskType === "subtask" && <label className="field field-wide">К какой надзадаче прикрепить<select value={draft.parentId || ""} onChange={(event) => setDraft({ ...draft, parentId: event.target.value || null })}><option value="">Выберите надзадачу</option>{parents.map((task) => <option value={task.id} key={task.id}>{task.title}</option>)}</select><ChevronDown size={15} /></label>}
+            {item?.template && <label className="field field-wide">Статус<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} /></label>}
             <label className="field">Дата начала<input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></label>
             <label className="field">Дедлайн<input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} /></label>
-            <label className="field field-wide">Статус<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} /></label>
+            {!item?.template && <label className="field field-wide">Статус<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} /></label>}
           </div>
+          {isTemplateSprint && (
+            <>
+              <CheckpointsEditor groups={draft.groups ?? []} nextCode={() => nextCheckpointCode(draft)} onChange={(groups) => setDraft({ ...draft, groups })} />
+              {sprintAllDone && draft.status !== "Завершено" && (
+                <div className="all-done">✓ Все контрольные точки отмечены — спринт можно закрывать.<button type="button" onClick={() => setDraft({ ...draft, status: "Завершено" })}>Отметить завершённым</button></div>
+              )}
+            </>
+          )}
+          {isTemplateParent && (
+            <>
+              <div className="check-head sprint-head"><strong>Спринты</strong><span className="check-count">Сроки подзадач меняются в их карточках</span></div>
+              <div className="sprint-list">
+                {sprints.map((sprint) => {
+                  const progress = checkpointProgress(sprint, tasks) ?? { done: 0, total: 0 };
+                  return (
+                    <button type="button" className="sprint-row" key={sprint.id} onClick={() => onOpenTask(sprint)}>
+                      <span className="code-chip">{sprint.template?.subCode}</span>
+                      <b>{sprint.title}</b>
+                      <span className="sprint-dates">{formatShortDate(sprint.startDate)} — {formatShortDate(sprint.endDate)}</span>
+                      <span className="sprint-progress"><span className="check-bar"><i className={progress.total > 0 && progress.done === progress.total ? "check-bar-done" : ""} style={{ width: (progress.total > 0 ? progress.done / progress.total * 100 : 0) + "%" }} /></span>{progress.done}/{progress.total}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           <CommentsEditor comments={draft.comments} onChange={(comments) => setDraft({ ...draft, comments })} />
           {error && <p className="form-error">{error}</p>}
         </div>
@@ -1681,7 +1734,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
       </section>
       </> : <AccountingPolicy reports={data.reports} people={data.people} onChange={(reports) => commit((current) => ({ ...current, reports }))} />}
 
-      {modal?.kind === "task" && <TaskDialog item={modal.item} tasks={data.tasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} />}
+      {modal?.kind === "task" && <TaskDialog key={modal.item?.id ?? "new"} item={modal.item} tasks={data.tasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} onOpenTask={(task) => setModal({ kind: "task", item: task })} />}
       {modal?.kind === "template" && <TemplateDialog templates={templates} tasks={data.tasks} people={data.people} today={todayKey} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onAdd={addTemplateTasks} />}
       {modal?.kind === "idea" && <IdeaDialog item={modal.item} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveIdea} onDelete={deleteIdea} />}
       {modal?.kind === "meeting" && <MeetingDialog item={modal.item} defaultDate={calendarDefaultDate} people={data.people} seriesCount={modal.item ? getSeriesOccurrences(data.meetings, modal.item).length : 1} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveMeeting} onDelete={deleteMeeting} />}
