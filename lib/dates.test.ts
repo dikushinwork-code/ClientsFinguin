@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextMonday, startOfWeek, weekdayName } from "./dates";
+import { formatDayMonth, nextMonday, startOfWeek, weekdayName } from "./dates";
 
 describe("startOfWeek", () => {
   it("возвращает понедельник той же недели", () => {
@@ -14,6 +14,13 @@ describe("nextMonday", () => {
     expect(nextMonday("2026-09-18")).toBe("2026-09-21");
     expect(nextMonday("2026-09-21")).toBe("2026-09-21");
     expect(nextMonday("2026-09-22")).toBe("2026-09-28");
+  });
+});
+
+describe("formatDayMonth", () => {
+  it("печатает день и месяц с ведущими нулями", () => {
+    expect(formatDayMonth("2026-09-05")).toBe("05.09");
+    expect(formatDayMonth("2026-10-11")).toBe("11.10");
   });
 });
 

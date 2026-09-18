@@ -13,6 +13,12 @@ export function toISO(date: Date) {
   return year + "-" + month + "-" + day;
 }
 
+// Короткий формат «ДД.ММ» — для карточек типовых задач и тостов.
+export function formatDayMonth(value: string) {
+  const date = parseDate(value);
+  return String(date.getDate()).padStart(2, "0") + "." + String(date.getMonth() + 1).padStart(2, "0");
+}
+
 export function isValidDateValue(value: string) {
   return !Number.isNaN(parseDate(value).getTime());
 }

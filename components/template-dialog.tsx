@@ -5,15 +5,10 @@ import { useState } from "react";
 import ModalShell from "@/components/modal-shell";
 import PersonSelect from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
-import { isValidDateValue, nextMonday, parseDate, startOfWeek, weekdayName } from "@/lib/dates";
+import { formatDayMonth, isValidDateValue, nextMonday, parseDate, startOfWeek, weekdayName } from "@/lib/dates";
 import { countCheckpoints, expandTemplate, scheduleTemplate } from "@/lib/typical-tasks";
 import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
 import type { Task } from "@/lib/types";
-
-function formatDayMonth(value: string) {
-  const date = parseDate(value);
-  return String(date.getDate()).padStart(2, "0") + "." + String(date.getMonth() + 1).padStart(2, "0");
-}
 
 function plural(count: number, one: string, few: string, many: string) {
   const mod10 = count % 10;

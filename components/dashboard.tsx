@@ -28,7 +28,7 @@ import ModalShell from "@/components/modal-shell";
 import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
 import TemplateDialog from "@/components/template-dialog";
-import { addDays, differenceInDays, parseDate, toISO } from "@/lib/dates";
+import { addDays, differenceInDays, formatDayMonth, parseDate, toISO } from "@/lib/dates";
 import {
   frequencyTitle,
   getScopeCounts,
@@ -186,12 +186,6 @@ function pluralSubtasks(count: number) {
   if (last === 1) return "подзадача";
   if (last >= 2 && last <= 4) return "подзадачи";
   return "подзадач";
-}
-
-// Короткий формат «ДД.ММ» — для тоста после добавления типовой задачи.
-function formatDayMonth(value: string) {
-  const date = parseDate(value);
-  return String(date.getDate()).padStart(2, "0") + "." + String(date.getMonth() + 1).padStart(2, "0");
 }
 
 function isTaskOverdue(task: Task, today: Date) {
@@ -501,9 +495,9 @@ function TaskDialog({
     ? (item.template.subCode || item.template.code) + ". " + draft.title
     : item ? "Редактировать задачу" : "Новая задача";
   const dialogSubtitle = isTemplateSprint && item
-    ? "Типовая задача " + item.template!.code + " · спринт " + item.template!.week + " из " + tasks.filter((task) => task.parentId === item.parentId && task.template?.subCode).length + " · неделя " + formatShortDate(draft.startDate) + " — " + formatShortDate(draft.endDate)
+    ? "Типовая задача " + item.template!.code + " · спринт " + item.template!.week + " из " + tasks.filter((task) => task.parentId === item.parentId && task.template?.subCode).length + " · неделя " + formatDayMonth(draft.startDate) + " — " + formatDayMonth(draft.endDate)
     : isTemplateParent
-      ? "Типовая задача · " + sprints.length + " " + pluralSprints(sprints.length) + " · " + formatShortDate(draft.startDate) + " — " + formatShortDate(draft.endDate) + " · контрольных точек " + parentProgress.done + " из " + parentProgress.total
+      ? "Типовая задача · " + sprints.length + " " + pluralSprints(sprints.length) + " · " + formatDayMonth(draft.startDate) + " — " + formatDayMonth(draft.endDate) + " · контрольных точек " + parentProgress.done + " из " + parentProgress.total
       : "Сроки сразу появятся на диаграмме Ганта";
 
   function submit(event: FormEvent) {
@@ -520,7 +514,7 @@ function TaskDialog({
     <ModalShell title={dialogTitle} subtitle={dialogSubtitle} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="modal-body">
-          <label className="field field-wide">{isTemplateSprint ? "Название подзадачи" : "Название задачи"}<input autoFocus={!item} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Например, Подготовить форму ДДС" /></label>
+          <label className="field field-wide">{isTemplateSprint ? "Название подзадачи" : "Название задачи"}<input autoFocus={!item?.template} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Например, Подготовить форму ДДС" /></label>
           <div className="form-grid">
             {!item?.template && <label className="field">Тип задачи<select value={taskType} onChange={(event) => {
               const value = event.target.value as "parent" | "subtask";
@@ -552,7 +546,7 @@ function TaskDialog({
                     <button type="button" className="sprint-row" key={sprint.id} onClick={() => onOpenTask(sprint)}>
                       <span className="code-chip">{sprint.template?.subCode}</span>
                       <b>{sprint.title}</b>
-                      <span className="sprint-dates">{formatShortDate(sprint.startDate)} — {formatShortDate(sprint.endDate)}</span>
+                      <span className="sprint-dates">{formatDayMonth(sprint.startDate)} — {formatDayMonth(sprint.endDate)}</span>
                       <span className="sprint-progress"><span className="check-bar"><i className={progress.total > 0 && progress.done === progress.total ? "check-bar-done" : ""} style={{ width: (progress.total > 0 ? progress.done / progress.total * 100 : 0) + "%" }} /></span>{progress.done}/{progress.total}</span>
                     </button>
                   );
