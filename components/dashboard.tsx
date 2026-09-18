@@ -46,6 +46,7 @@ import type {
   Task,
   TaskStatus,
 } from "@/lib/types";
+import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
 
 const TASK_STATUSES: TaskStatus[] = ["Не начато", "В работе", "На проверке", "Завершено", "Просрочено"];
 const IDEA_STATUSES: IdeaStatus[] = ["Новая", "На обсуждении", "Одобрена", "В реализации", "Реализована", "Отклонена"];
@@ -968,7 +969,7 @@ function RegularPeriodDialog({
   );
 }
 
-export default function Dashboard({ initialData, serverToday }: { initialData: DashboardData; serverToday: string }) {
+export default function Dashboard({ initialData, serverToday, templates }: { initialData: DashboardData; serverToday: string; templates: TypicalTaskTemplate[] }) {
   const [data, setData] = useState<DashboardData>(initialData);
   const [activePage, setActivePage] = useState<"roadmap" | "policy">("roadmap");
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
