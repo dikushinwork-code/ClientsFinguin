@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import AccountingPolicy from "@/components/accounting-policy";
+import { ProgressRing } from "@/components/checkpoints-editor";
 import ModalShell from "@/components/modal-shell";
 import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
@@ -51,6 +52,7 @@ import type {
   Task,
   TaskStatus,
 } from "@/lib/types";
+import { checkpointProgress } from "@/lib/typical-tasks";
 import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
 
 const TASK_STATUSES: TaskStatus[] = ["Не начато", "В работе", "На проверке", "Завершено", "Просрочено"];
@@ -1512,6 +1514,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
             {visibleTasks.map((task) => {
               const childCount = data.tasks.filter((child) => child.parentId === task.id).length;
               const isCollapsed = collapsedTaskIds.has(task.id);
+              const progress = checkpointProgress(task, data.tasks);
               return (
                 <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent") + (freshTaskIds.has(task.id) ? " fresh" : "")} key={task.id} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") setModal({ kind: "task", item: task });
@@ -1520,8 +1523,10 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
                     {!task.parentId && childCount > 0 && <button type="button" className="task-toggle" aria-label={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"} aria-expanded={!isCollapsed} onClick={(event) => { event.stopPropagation(); toggleParent(task.id); }}>{isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>}
                     {!task.parentId && childCount === 0 && <span className="toggle-spacer" />}
                     {task.parentId && <i />}
+                    {task.template && <span className={"code-chip" + (task.parentId ? "" : " code-chip-parent")}>{task.template.subCode || task.template.code}</span>}
                     <b>{task.title}</b>
                     {!task.parentId && childCount > 0 && <small className="child-count">{childCount}</small>}
+                    {progress && progress.total > 0 && <small className={"progress-chip" + (progress.done === progress.total ? " progress-done" : "")} title={"Контрольные точки: " + progress.done + " из " + progress.total}><ProgressRing done={progress.done} total={progress.total} />{progress.done}/{progress.total}</small>}
                     {task.comments.length > 0 && <small><MessageSquareText size={12} />{task.comments.length}</small>}
                   </span>
                   <span className="assignee-cell">{task.assignee || "—"}</span>
@@ -1544,9 +1549,10 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
                     ? "Базовый план на " + formatShortDate(baselineKey) + ": " + formatShortDate(shift.base.startDate) + " — " + formatShortDate(shift.base.endDate)
                       + (shift.days === 0 ? "" : ", дедлайн " + (shift.days > 0 ? "+" : "−") + Math.abs(shift.days) + " " + pluralDays(Math.abs(shift.days)))
                     : undefined;
+                  const progress = checkpointProgress(task, data.tasks);
                   return (
                     <div className="gantt-row" key={task.id}>
-                      <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task, today) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)}><span>{task.title}</span><i /></button>
+                      <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task, today) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)} title={task.title + " · " + formatShortDate(task.startDate) + " — " + formatShortDate(task.endDate) + (progress && progress.total > 0 ? " · точки " + progress.done + "/" + progress.total : "")}><span>{task.title}</span><i /></button>
                       {shift?.segments.map((segment) => <i key={segment.id} className={"gantt-delta" + (segment.inside ? "" : " gantt-delta-outside") + (task.parentId ? "" : " gantt-delta-parent")} style={ganttBarStyle(segment.from, segment.to)} title={shiftTitle} />)}
                     </div>
                   );
