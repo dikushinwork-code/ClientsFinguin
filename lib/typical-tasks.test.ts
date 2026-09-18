@@ -82,8 +82,24 @@ describe("parseTypicalTasks: ошибки формата", () => {
     expect(() => parseTypicalTasks(head + "- [ ] Пункт без кода\n")).toThrow(/без кода/);
   });
 
+  it("длительность не числом недель", () => {
+    const text = "# ТЕСТ. Тестовая задача\n\n**Длительность:** три недели\n\n## ТЕСТ-1. Спринт\n\n- [ ] `ТЕСТ-1.1` Пункт\n";
+    expect(() => parseTypicalTasks(text)).toThrow(TypicalTasksFormatError);
+    expect(() => parseTypicalTasks(text)).toThrow(/строка 3/);
+    expect(() => parseTypicalTasks(text)).toThrow(/длительност/);
+  });
+
   it("число недель не совпадает с числом подзадач", () => {
-    expect(() => parseTypicalTasks(head + "- [ ] `ТЕСТ-1.1` Пункт\n\n## ТЕСТ-2. Второй спринт\n\n- [ ] `ТЕСТ-2.1` Пункт\n")).toThrow(/недел/);
+    const text = head + "- [ ] `ТЕСТ-1.1` Пункт\n\n## ТЕСТ-2. Второй спринт\n\n- [ ] `ТЕСТ-2.1` Пункт\n";
+    expect(() => parseTypicalTasks(text)).toThrow(/недел/);
+    // Ошибка указывает на строку заголовка задачи, а не на первую строку файла.
+    expect(() => parseTypicalTasks("\n" + text)).toThrow(/строка 2/);
+  });
+
+  it("у задачи нет подзадач", () => {
+    const text = "\n# ТЕСТ. Тестовая задача\n\n**Длительность:** 1 неделя\n";
+    expect(() => parseTypicalTasks(text)).toThrow(/нет подзадач/);
+    expect(() => parseTypicalTasks(text)).toThrow(/строка 2/);
   });
 
   it("игнорирует шаблон в блоке кода и вводную часть", () => {
@@ -121,8 +137,9 @@ describe("expandTemplate", () => {
 
   it("создаёт подзадачи с точками, скопированными без отметок", () => {
     expect(children).toHaveLength(3);
-    expect(children[0]).toMatchObject({ parentId: "id-1", title: "Настройка сервиса и разнесение прошлого периода", startDate: "2026-09-21", endDate: "2026-09-27", template: { code: "ДДС", subCode: "ДДС-1", week: 1 } });
+    expect(children[0]).toMatchObject({ parentId: "id-1", title: "Настройка сервиса и разнесение прошлого периода", assignee: "Иван Петров", status: "Не начато", startDate: "2026-09-21", endDate: "2026-09-27", template: { code: "ДДС", subCode: "ДДС-1", week: 1 } });
     expect(children[0].groups![0].items[4]).toMatchObject({ code: "ДДС-1.5", done: false, noteTitle: "Проверка остатков денежных средств на расчётных счетах" });
+    expect(children[2]).toMatchObject({ parentId: "id-1", assignee: "Иван Петров", status: "Не начато" });
     expect(children[2].template).toEqual({ code: "ДДС", subCode: "ДДС-3", week: 3 });
   });
 

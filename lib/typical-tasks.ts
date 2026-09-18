@@ -63,6 +63,8 @@ type Continuation =
 export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[] {
   const lines = markdown.split(/\r?\n/);
   const templates: TypicalTaskTemplate[] = [];
+  // Строка заголовка «# КОД.» каждого шаблона — на неё ссылаются проверки после разбора.
+  const headingLines: number[] = [];
   const itemLines = new Map<string, number>();
   const pending: Array<{ item: TemplateCheckpoint; line: number }> = [];
   const notes = new Map<string, { title: string; text: string[]; line: number }>();
@@ -94,6 +96,7 @@ export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[] {
     if (match) {
       template = { code: match[1], title: match[2].trim(), weeks: 0, premise: "", subtasks: [] };
       templates.push(template);
+      headingLines.push(lineNumber);
       subtask = null; group = null; inNotes = false; continuation = null;
       return;
     }
@@ -135,6 +138,7 @@ export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[] {
     }
     match = DURATION.exec(line);
     if (match) { template.weeks = Number(match[1]); continuation = null; return; }
+    if (line.startsWith("**Длительность:**")) throw new TypicalTasksFormatError(lineNumber, "длительность должна быть числом недель");
     match = RESULT.exec(line);
     if (match) { currentGroup(lineNumber).result = match[1].trim(); continuation = null; return; }
     match = ITEM.exec(line);
@@ -180,10 +184,11 @@ export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[] {
   for (const [code, note] of notes) {
     if (!itemLines.has(code)) throw new TypicalTasksFormatError(note.line, "заметка к несуществующему пункту " + code);
   }
-  for (const item of templates) {
-    if (item.subtasks.length === 0) throw new TypicalTasksFormatError(1, "у задачи " + item.code + " нет подзадач");
-    if (item.weeks !== item.subtasks.length) throw new TypicalTasksFormatError(1, "у задачи " + item.code + " " + item.weeks + " недель, а подзадач " + item.subtasks.length + ": подзадача занимает ровно одну неделю");
-  }
+  templates.forEach((item, index) => {
+    const headingLine = headingLines[index];
+    if (item.subtasks.length === 0) throw new TypicalTasksFormatError(headingLine, "у задачи " + item.code + " нет подзадач");
+    if (item.weeks !== item.subtasks.length) throw new TypicalTasksFormatError(headingLine, "у задачи " + item.code + " " + item.weeks + " недель, а подзадач " + item.subtasks.length + ": подзадача занимает ровно одну неделю");
+  });
   return templates;
 }
 
