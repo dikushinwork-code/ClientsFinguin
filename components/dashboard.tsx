@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  ClipboardCheck,
   Clock3,
   History,
   Lightbulb,
@@ -25,6 +26,7 @@ import AccountingPolicy from "@/components/accounting-policy";
 import ModalShell from "@/components/modal-shell";
 import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
+import TemplateDialog from "@/components/template-dialog";
 import { addDays, differenceInDays, parseDate, toISO } from "@/lib/dates";
 import {
   frequencyTitle,
@@ -103,6 +105,7 @@ type ModalState =
   | { kind: "meeting"; item: Meeting | null }
   | { kind: "regular-task"; item: RegularTask | null }
   | { kind: "regular-period"; task: RegularTask; monthStart: string }
+  | { kind: "template" }
   | null;
 
 function formatShortDate(value: string) {
@@ -164,6 +167,21 @@ function pluralTasks(count: number) {
   if (last === 1) return "задача";
   if (last >= 2 && last <= 4) return "задачи";
   return "задач";
+}
+
+function pluralSubtasks(count: number) {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return "подзадач";
+  if (last === 1) return "подзадача";
+  if (last >= 2 && last <= 4) return "подзадачи";
+  return "подзадач";
+}
+
+// Короткий формат «ДД.ММ» — для тоста после добавления типовой задачи.
+function formatDayMonth(value: string) {
+  const date = parseDate(value);
+  return String(date.getDate()).padStart(2, "0") + "." + String(date.getMonth() + 1).padStart(2, "0");
 }
 
 function isTaskOverdue(task: Task, today: Date) {
@@ -882,6 +900,17 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
   const [pickedCalendarMonth, setPickedCalendarMonth] = useState<Date | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ganttScrollRef = useRef<HTMLDivElement | null>(null);
+  // Тост — обобщённое короткое уведомление внизу экрана; пока используется только после
+  // добавления типовой задачи, но не завязано на неё напрямую.
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Свежедобавленные строки таблицы подсвечиваются на несколько секунд, затем класс снимается.
+  const [freshTaskIds, setFreshTaskIds] = useState<Set<string>>(() => new Set());
+  const freshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Гант и его ширина пересчитываются от data.tasks, поэтому дату для прокрутки после
+  // добавления типовой задачи откладываем сюда (в ref, а не в state — установка её значения
+  // не должна сама по себе быть сайд-эффектом рендера) и прокручиваем в эффекте — уже по новому диапазону.
+  const pendingScrollDateRef = useRef<string | null>(null);
 
   // Серверный снимок — дата, вшитая в статическую разметку. Совпадение с HTML снимает
   // расхождение при гидратации, а сразу после неё React возьмёт браузерный снимок.
@@ -944,6 +973,17 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
   }, []);
+
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    if (freshTimer.current) clearTimeout(freshTimer.current);
+  }, []);
+
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 2500);
+  }
 
   const ordered = useMemo(() => orderedTasks(data.tasks), [data.tasks]);
   const filteredTasks = useMemo(() => ordered.filter((task) => {
@@ -1115,6 +1155,26 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
     if (!window.confirm("Удалить задачу и её подзадачи?")) return;
     commit((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== id && task.parentId !== id) }));
     setModal(null);
+  }
+
+  function addTemplateTasks(newTasks: Task[]) {
+    commit((current) => ({
+      ...current,
+      people: mergePeople(current.people, [newTasks[0].assignee]),
+      tasks: [...current.tasks, ...newTasks],
+    }));
+    setModal(null);
+    // Гант ещё не знает про новые задачи — реальную прокрутку делаем в эффекте,
+    // когда ganttRange и ширина таймлайна пересчитаются от обновлённого data.tasks.
+    pendingScrollDateRef.current = newTasks[0].startDate;
+
+    const parent = newTasks[0];
+    const childCount = newTasks.length - 1;
+    setFreshTaskIds(new Set(newTasks.map((task) => task.id)));
+    if (freshTimer.current) clearTimeout(freshTimer.current);
+    freshTimer.current = setTimeout(() => setFreshTaskIds(new Set()), 3500);
+
+    showToast("Добавлено: " + (parent.template?.code ?? "") + " · " + childCount + " " + pluralSubtasks(childCount) + ", " + formatDayMonth(parent.startDate) + " — " + formatDayMonth(parent.endDate));
   }
 
   function saveIdea(idea: Idea) {
@@ -1300,14 +1360,24 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
     12
   ));
 
-  function scrollGanttToToday() {
+  function scrollGanttToDate(value: string) {
     const scroller = ganttScrollRef.current;
     if (!scroller) return;
-    const currentMonthStart = startOfMonth(today);
-    const daysFromRangeStart = Math.max(0, Math.round((currentMonthStart.getTime() - ganttRange.start.getTime()) / 86400000));
+    const monthStart = startOfMonth(parseDate(value));
+    const daysFromRangeStart = Math.max(0, Math.round((monthStart.getTime() - ganttRange.start.getTime()) / 86400000));
     const monthPosition = daysFromRangeStart / ganttRange.totalDays * ganttTimelineWidth;
     scroller.scrollTo({ left: Math.max(0, monthPosition - 16), behavior: "smooth" });
   }
+
+  // Прокрутка после добавления типовой задачи: ganttRange и ganttTimelineWidth к этому моменту
+  // уже посчитаны заново от обновлённого data.tasks, а DOM таймлайна перерисован. Флаг лежит
+  // в ref, а не в state, — эффект не переиспускает рендер, а только двигает существующий DOM.
+  useEffect(() => {
+    if (!pendingScrollDateRef.current) return;
+    scrollGanttToDate(pendingScrollDateRef.current);
+    pendingScrollDateRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ganttRange, ganttTimelineWidth]);
 
   return (
     <main className="dashboard-shell">
@@ -1431,7 +1501,8 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
                 </div>
               ) : null}
             </div>
-            <button className="secondary today-button" onClick={scrollGanttToToday}><CalendarDays size={16} />Сегодня</button>
+            <button className="secondary today-button" onClick={() => scrollGanttToDate(toISO(today))}><CalendarDays size={16} />Сегодня</button>
+            <button className="secondary template-button" onClick={() => setModal({ kind: "template" })}><ClipboardCheck size={16} />Типовая задача</button>
             <button className="primary" onClick={() => setModal({ kind: "task", item: null })}><Plus size={17} />Новая задача</button>
           </div>
         </div>
@@ -1442,7 +1513,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
               const childCount = data.tasks.filter((child) => child.parentId === task.id).length;
               const isCollapsed = collapsedTaskIds.has(task.id);
               return (
-                <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent")} key={task.id} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
+                <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent") + (freshTaskIds.has(task.id) ? " fresh" : "")} key={task.id} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") setModal({ kind: "task", item: task });
                 }}>
                   <span className="task-title-cell">
@@ -1605,6 +1676,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
       </> : <AccountingPolicy reports={data.reports} people={data.people} onChange={(reports) => commit((current) => ({ ...current, reports }))} />}
 
       {modal?.kind === "task" && <TaskDialog item={modal.item} tasks={data.tasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} />}
+      {modal?.kind === "template" && <TemplateDialog templates={templates} tasks={data.tasks} people={data.people} today={todayKey} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onAdd={addTemplateTasks} />}
       {modal?.kind === "idea" && <IdeaDialog item={modal.item} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveIdea} onDelete={deleteIdea} />}
       {modal?.kind === "meeting" && <MeetingDialog item={modal.item} defaultDate={calendarDefaultDate} people={data.people} seriesCount={modal.item ? getSeriesOccurrences(data.meetings, modal.item).length : 1} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveMeeting} onDelete={deleteMeeting} />}
       {seriesPrompt && (
@@ -1625,6 +1697,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
       )}
       {modal?.kind === "regular-task" && <RegularTaskDialog item={modal.item} tasks={data.regularTasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveRegularTask} onDelete={deleteRegularTask} />}
       {modal?.kind === "regular-period" && <RegularPeriodDialog task={modal.task} monthStart={modal.monthStart} onClose={() => setModal(null)} onSave={saveRegularTask} />}
+      <div className={"toast" + (toast ? " show" : "")}>{toast}</div>
     </main>
   );
 }
