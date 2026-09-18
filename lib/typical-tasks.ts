@@ -1,3 +1,6 @@
+import { addDays } from "./dates";
+import type { CheckpointGroup, Task } from "./types";
+
 export interface TemplateCheckpoint {
   code: string;
   title: string;
@@ -182,4 +185,99 @@ export function parseTypicalTasks(markdown: string): TypicalTaskTemplate[] {
     if (item.weeks !== item.subtasks.length) throw new TypicalTasksFormatError(1, "у задачи " + item.code + " " + item.weeks + " недель, а подзадач " + item.subtasks.length + ": подзадача занимает ровно одну неделю");
   }
   return templates;
+}
+
+export interface SprintSchedule {
+  code: string;
+  title: string;
+  week: number;
+  startDate: string;
+  endDate: string;
+  checkpoints: number;
+}
+
+export function countCheckpoints(template: TypicalTaskTemplate) {
+  return template.subtasks.reduce((sum, subtask) => sum + subtask.groups.reduce((inner, group) => inner + group.items.length, 0), 0);
+}
+
+// Подзадача k занимает ровно одну неделю, начиная с startDate + 7·(k−1). Праздники не учитываются.
+export function scheduleTemplate(template: TypicalTaskTemplate, startDate: string): SprintSchedule[] {
+  return template.subtasks.map((subtask, index) => ({
+    code: subtask.code,
+    title: subtask.title,
+    week: index + 1,
+    startDate: addDays(startDate, 7 * index),
+    endDate: addDays(startDate, 7 * index + 6),
+    checkpoints: subtask.groups.reduce((sum, group) => sum + group.items.length, 0),
+  }));
+}
+
+function copyGroups(subtask: TemplateSubtask): CheckpointGroup[] {
+  return subtask.groups.map((group) => ({
+    title: group.title,
+    result: group.result,
+    items: group.items.map((item) => ({ ...item, done: false })),
+  }));
+}
+
+// Надзадача и подзадачи-спринты. Точки копируются: дальше они принадлежат клиенту.
+export function expandTemplate(
+  template: TypicalTaskTemplate,
+  startDate: string,
+  assignee: string,
+  makeId: () => string = () => crypto.randomUUID()
+): Task[] {
+  const parentId = makeId();
+  const schedule = scheduleTemplate(template, startDate);
+  const children: Task[] = template.subtasks.map((subtask, index) => ({
+    id: makeId(),
+    parentId,
+    title: subtask.title,
+    assignee,
+    status: "Не начато",
+    startDate: schedule[index].startDate,
+    endDate: schedule[index].endDate,
+    comments: [],
+    template: { code: template.code, subCode: subtask.code, week: index + 1 },
+    groups: copyGroups(subtask),
+  }));
+  const parent: Task = {
+    id: parentId,
+    parentId: null,
+    title: template.title,
+    assignee,
+    status: "Не начато",
+    startDate,
+    endDate: schedule[schedule.length - 1].endDate,
+    comments: [],
+    template: { code: template.code },
+  };
+  return [parent, ...children];
+}
+
+export function taskCheckpoints(task: Task) {
+  return (task.groups ?? []).flatMap((group) => group.items);
+}
+
+// null — у обычных задач, чтобы таблица не рисовала пустой счётчик.
+export function checkpointProgress(task: Task, tasks: Task[]): { done: number; total: number } | null {
+  if (!task.template) return null;
+  if (task.template.subCode) {
+    const items = taskCheckpoints(task);
+    return { done: items.filter((item) => item.done).length, total: items.length };
+  }
+  return tasks
+    .filter((child) => child.parentId === task.id)
+    .reduce((sum, child) => {
+      const progress = checkpointProgress(child, tasks);
+      return progress ? { done: sum.done + progress.done, total: sum.total + progress.total } : sum;
+    }, { done: 0, total: 0 });
+}
+
+// Новая точка получает следующий номер после максимального, чтобы коды не повторялись
+// даже после удаления пунктов из середины.
+export function nextCheckpointCode(task: Task) {
+  const prefix = task.template?.subCode ?? task.template?.code ?? "Т";
+  const numbers = taskCheckpoints(task).map((item) => Number(item.code.split(".").pop()) || 0);
+  return prefix + "." + (Math.max(0, ...numbers) + 1);
 }
