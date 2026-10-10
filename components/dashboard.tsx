@@ -28,9 +28,11 @@ import CheckpointsEditor, { formatCheckpointDate, ProgressRing } from "@/compone
 import ModalShell from "@/components/modal-shell";
 import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
+import { ShiftHistory, ShiftReasonFields } from "@/components/shift-reason";
 import TemplateDialog from "@/components/template-dialog";
 import { addDays, differenceInDays, formatDayMonth, parseDate, toISO } from "@/lib/dates";
 import { plural } from "@/lib/plural";
+import { appendShift, needsShiftReason, validateShift } from "@/lib/task-shifts";
 import {
   frequencyTitle,
   getScopeCounts,
@@ -51,6 +53,7 @@ import type {
   RegularFrequency,
   RegularRecord,
   RegularTask,
+  ShiftReason,
   Task,
   TaskStatus,
 } from "@/lib/types";
@@ -469,6 +472,9 @@ function TaskDialog({
     comments: [],
   });
   const [error, setError] = useState("");
+  const [shift, setShift] = useState<{ reason: ShiftReason | ""; holdCode: string; note: string }>({ reason: "", holdCode: "", note: "" });
+  const askReason = needsShiftReason(item, draft, tasks);
+  const openCheckpoints = taskCheckpoints(draft).filter((checkpoint) => !checkpoint.done);
 
   const isTemplateSprint = Boolean(item?.template?.subCode);
   const [labelsText, setLabelsText] = useState(() => (item?.labels ?? []).join(", "));
@@ -496,7 +502,13 @@ function TaskDialog({
       return setError("Проверьте даты начала и окончания.");
     }
     const labels = [...new Set(labelsText.split(",").map((label) => label.trim()).filter(Boolean))];
-    onSave({ ...draft, labels, parentId: item?.template ? draft.parentId : taskType === "parent" ? null : draft.parentId, title: draft.title.trim(), assignee: draft.assignee.trim() });
+    let saved: Task = { ...draft, labels, parentId: item?.template ? draft.parentId : taskType === "parent" ? null : draft.parentId, title: draft.title.trim(), assignee: draft.assignee.trim() };
+    if (askReason && item) {
+      const shiftError = validateShift(shift.reason, shift.note);
+      if (shiftError) return setError(shiftError);
+      saved = appendShift(item, saved, { reason: shift.reason as ShiftReason, holdCode: shift.holdCode, note: shift.note }, today);
+    }
+    onSave(saved);
   }
 
   return (
@@ -518,6 +530,8 @@ function TaskDialog({
             <label className="field">Дедлайн<input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} /></label>
             {!item?.template && <label className="field field-wide">Статус<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} /></label>}
           </div>
+          {askReason && item && <ShiftReasonFields from={item.endDate} to={draft.endDate} {...shift} openCheckpoints={openCheckpoints} onChange={(patch) => { setShift({ ...shift, ...patch }); setError(""); }} />}
+          {item && <ShiftHistory task={item} />}
           {hasChecklist && (
             <>
               <CheckpointsEditor groups={draft.groups ?? []} nextCode={() => nextCheckpointCode(draft)} onChange={(groups) => setDraft({ ...draft, groups })} startDate={draft.startDate} endDate={draft.endDate} today={today} defaultAssignee={draft.assignee} people={people} onAddPerson={onAddPerson} highlightDate={focusDate} />
@@ -549,7 +563,7 @@ function TaskDialog({
         </div>
         <footer className="modal-actions">
           {item ? <button type="button" className="delete-button" onClick={() => onDelete(item.id)}><Trash2 size={16} />Удалить</button> : <span />}
-          <div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button type="submit" className="primary">Сохранить</button></div>
+          <div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button type="submit" className="primary">{askReason ? "Перенести срок" : "Сохранить"}</button></div>
         </footer>
       </form>
     </ModalShell>

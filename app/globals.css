@@ -555,6 +555,32 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .check-item { transition: background .6s ease; }
 .check-item.cp-flash { background: #fff8ea; }
 
+/* Причина и история переносов срока */
+.shift-reason { margin: 0 0 14px; padding: 14px; display: grid; gap: 12px; border: 1px solid #ecc98f; border-radius: 10px; background: #fffaf2; }
+.shift-reason .field { margin-bottom: 0; }
+.shift-reason-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; color: #7a4708; font-size: 13px; font-weight: 700; }
+.shift-reason-title span { color: #9a6a2a; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.shift-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.shift-chips button { min-height: 32px; padding: 0 12px; border: 1px solid #d6dde7; border-radius: 16px; background: #fff; color: #3f4d62; font-size: 12px; font-weight: 600; }
+.shift-chips button:hover { border-color: #9db8dd; background: #eef5ff; }
+.shift-chips button.is-on { border-color: var(--navy); background: var(--navy); color: #fff; }
+.shift-history { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.shift-history-head { padding: 9px 14px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; background: #f8fafc; border-bottom: 1px solid var(--soft-line); color: #4e5b70; font-size: 12px; font-weight: 650; }
+.shift-history-row { padding: 9px 14px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; border-bottom: 1px solid var(--soft-line); font-size: 12px; }
+.shift-history-row:last-child { border-bottom: 0; }
+.shift-history-row time { color: #7d8797; font-variant-numeric: tabular-nums; }
+.shift-history-row p { margin: 3px 0 0; color: #5b6880; }
+.shift-dates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: #3c4a62; font-size: 12px; font-variant-numeric: tabular-nums; }
+.shift-dates s { color: #8a94a4; }
+
+/* Флажки состояния в строках диаграммы, отчёте недели и истории переносов */
+.flag { padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 650; font-style: normal; white-space: nowrap; }
+.flag-red { color: #c4353b; background: #ffeded; }
+.flag-amber { color: #9a5a0a; background: #fff2df; }
+.flag-grey { color: #627087; background: #edf2f8; }
+.flag-teal { color: #087a59; background: #e2f5ed; }
+.flag-muted { color: #7d8797; font-size: 11px; }
+
 /* Срок и ответственный контрольной точки: чип в строке и панель быстрого выбора */
 .check-tools .cp-chip { width: auto; height: 22px; margin-right: 4px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #d6dde7; border-radius: 11px; background: #fff; color: #354258; font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .check-tools .cp-chip:hover { border-color: #9db8dd; background: #f3f7fc; color: #354258; }
