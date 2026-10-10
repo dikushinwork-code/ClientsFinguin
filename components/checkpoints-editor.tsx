@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { normalizePerson } from "@/components/person-select";
 import { checkpointDate, checkpointState } from "@/lib/checkpoint-dates";
-import { addDays, differenceInDays, formatDayMonth, isValidDateValue, parseDate, weekdayName } from "@/lib/dates";
+import { setCheckpointDone } from "@/lib/checkpoint-tracking";
+import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, isValidDateValue, parseDate, weekdayName } from "@/lib/dates";
 import type { Checkpoint, CheckpointGroup } from "@/lib/types";
 
 // Кольцевой индикатор «сделано из всего» — используется в таблице задач и в сводке спринтов.
@@ -263,11 +264,13 @@ export default function CheckpointsEditor({
             </div>
           ) : (
             <div className={"check-item" + (item.done ? " check-item-done" : "") + (flashDate && checkpointDate(item) === flashDate ? " cp-flash" : "")} key={item.code}>
-              <input type="checkbox" id={"checkpoint-" + item.code} checked={item.done} onChange={() => patchItem(item.code, { done: !item.done })} />
+              <input type="checkbox" id={"checkpoint-" + item.code} checked={item.done} onChange={() => patchItem(item.code, setCheckpointDone(item, !item.done, today))} />
               <span className="check-code">{shortCode(item.code)}</span>
               <label htmlFor={"checkpoint-" + item.code} className={item.gate ? "check-gate" : ""}>{item.title}{item.aside && <span className="check-aside"> ({item.aside})</span>}</label>
               <span className="check-tools">
-                <ScheduleChip item={item} today={today} open={panel === item.code} onClick={() => setPanel(panel === item.code ? null : item.code)} />
+                {item.done && item.doneAt
+                  ? <span className="cp-done-at">сделано {formatDayShortMonth(item.doneAt)}</span>
+                  : <ScheduleChip item={item} today={today} open={panel === item.code} onClick={() => setPanel(panel === item.code ? null : item.code)} />}
                 {item.note && <button type="button" className={"info-button" + (openNotes.has(item.code) ? " info-open" : "")} title={item.noteTitle || "Пояснение"} aria-expanded={openNotes.has(item.code)} onClick={() => toggleNote(item.code)}>i</button>}
                 <button type="button" title="Изменить" aria-label={"Изменить точку " + item.code} onClick={() => startEdit(item)}><Pencil size={13} /></button>
               </span>

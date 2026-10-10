@@ -58,6 +58,18 @@ export interface RegularTask {
   records: Record<string, RegularRecord>;
 }
 
+export type ShiftReason = "client" | "fd" | "priority" | "blocker" | "other";
+
+// Перенос срока задачи. История копится в задаче, старые записи не правятся.
+export interface TaskShift {
+  date: string;      // день, когда перенесли
+  from: string;      // срок до переноса
+  to: string;        // новый срок
+  reason: ShiftReason;
+  holdCode: string;  // код контрольной точки, которая держит; пусто — не выбрана
+  note: string;
+}
+
 export interface Task {
   id: string;
   parentId: string | null;
@@ -73,6 +85,10 @@ export interface Task {
   template?: TaskTemplateRef;
   // Чек-лист доступен у обычных и типовых спринтов.
   groups?: CheckpointGroup[];
+  // Переносы срока с причинами — по порядку.
+  shifts?: TaskShift[];
+  // День перевода в статус «Завершено»; у задач, завершённых до появления поля, пусто.
+  completedAt?: string;
 }
 
 export interface BaselineTask {
@@ -92,6 +108,8 @@ export interface Checkpoint {
   done: boolean;
   date?: string;       // срок «ГГГГ-ММ-ДД»; без него точка не выводится на диаграмму Ганта
   assignee?: string;   // ответственный за точку; пусто — отвечает ответственный спринта
+  doneAt?: string;     // день, когда точку отметили сделанной
+  requests?: string[]; // дни запросов клиенту, по возрастанию
 }
 
 export interface CheckpointGroup {

@@ -565,6 +565,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .check-tools .cp-chip-today, .check-tools .cp-chip-today:hover { border-color: #f1d3a6; background: var(--amber-soft); color: #a75e08; }
 .check-tools .cp-chip-done { color: #7b8798; }
 .check-tools .cp-chip.is-open { border-color: #85aadd; box-shadow: 0 0 0 3px rgba(42, 120, 223, .1); }
+.check-tools .cp-done-at { height: 22px; margin-right: 4px; padding: 0 8px; display: inline-flex; align-items: center; border: 1px solid #cce6da; border-radius: 11px; background: #fff; color: #087a59; font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cp-panel { grid-column: 3 / -1; margin: 4px 0 6px; padding: 10px 12px; display: grid; gap: 10px; border: 1px solid #c9d6e8; border-radius: 8px; background: #fbfcfe; }
 .check-edit .cp-panel { grid-column: auto; margin: 0; padding: 0; border: 0; background: none; }
 .cp-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: start; }

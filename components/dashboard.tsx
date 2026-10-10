@@ -59,6 +59,7 @@ import type { CalendarTask, CalendarTaskSource } from "@/lib/calendar-items";
 import { getPlannedDates, occurrenceStatus, regularMonthStatus } from "@/lib/regular-schedule";
 import type { RegularStatus } from "@/lib/regular-schedule";
 import { checkpointDate, checkpointMarks, checkpointState } from "@/lib/checkpoint-dates";
+import { setCheckpointDone, withCompletion } from "@/lib/checkpoint-tracking";
 import type { CheckpointMark } from "@/lib/checkpoint-dates";
 import { checkpointProgress, nextCheckpointCode, taskCheckpoints } from "@/lib/typical-tasks";
 import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
@@ -1255,11 +1256,15 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   }
 
   function saveTask(task: Task) {
-    commit((current) => ({
-      ...current,
-      people: mergePeople(current.people, [task.assignee]),
-      tasks: current.tasks.some((item) => item.id === task.id) ? current.tasks.map((item) => item.id === task.id ? task : item) : [...current.tasks, task],
-    }));
+    commit((current) => {
+      const original = current.tasks.find((item) => item.id === task.id) ?? null;
+      const saved = withCompletion(original, task, todayKey);
+      return {
+        ...current,
+        people: mergePeople(current.people, [saved.assignee]),
+        tasks: original ? current.tasks.map((item) => item.id === saved.id ? saved : item) : [...current.tasks, saved],
+      };
+    });
     setModal(null);
   }
 
@@ -1475,7 +1480,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
       ...current,
       tasks: current.tasks.map((task) => task.id !== taskId ? task : {
         ...task,
-        groups: (task.groups ?? []).map((group) => ({ ...group, items: group.items.map((item) => item.code === code ? { ...item, done: !item.done } : item) })),
+        groups: (task.groups ?? []).map((group) => ({ ...group, items: group.items.map((item) => item.code === code ? setCheckpointDone(item, !item.done, todayKey) : item) })),
       }),
     }));
   }
