@@ -30,10 +30,10 @@ import type { PersonPickerProps } from "@/components/person-select";
 import { ShiftHistory, ShiftReasonFields } from "@/components/shift-reason";
 import TemplateDialog from "@/components/template-dialog";
 import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, parseDate, toISO } from "@/lib/dates";
-import { closingMonthKey, monthClosing, sprintHealth } from "@/lib/roadmap-pulse";
+import { closingMonthKey, isWorkTask, monthClosing, parentSummary, sprintHealth } from "@/lib/roadmap-pulse";
 import MonthClosingPopover from "@/components/month-closing-popover";
 import { plural } from "@/lib/plural";
-import { appendShift, needsShiftReason, validateShift } from "@/lib/task-shifts";
+import { appendShift, needsShiftReason, originalEndDate, shiftReasonInfo, validateShift } from "@/lib/task-shifts";
 import {
   frequencyTitle,
   getScopeCounts,
@@ -63,7 +63,7 @@ import type { CalendarTask, CalendarTaskSource } from "@/lib/calendar-items";
 import { getPlannedDates, occurrenceStatus, regularMonthStatus } from "@/lib/regular-schedule";
 import type { RegularStatus } from "@/lib/regular-schedule";
 import { checkpointDate, checkpointMarks, checkpointState } from "@/lib/checkpoint-dates";
-import { setCheckpointDone, withCompletion } from "@/lib/checkpoint-tracking";
+import { isWaitingClient, setCheckpointDone, withCompletion } from "@/lib/checkpoint-tracking";
 import type { CheckpointMark } from "@/lib/checkpoint-dates";
 import { checkpointProgress, nextCheckpointCode, taskCheckpoints } from "@/lib/typical-tasks";
 import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
@@ -938,7 +938,10 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   const [ganttFilter, setGanttFilter] = useState<"Все" | "В работе" | "Просрочено">("Все");
   const [baselineDate, setBaselineDate] = useState("");
   const [baselineMenuOpen, setBaselineMenuOpen] = useState(false);
-  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => new Set());
+  // Надзадачи со спринтами при открытии свёрнуты: сводка в строке показывает, где проблема.
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => new Set(
+    initialData.tasks.filter((task) => !task.parentId && initialData.tasks.some((child) => child.parentId === task.id)).map((task) => task.id),
+  ));
   const [collapsedRegularIds, setCollapsedRegularIds] = useState<Set<string>>(() => new Set(
     initialData.regularTasks
       .filter((task) => !task.parentId && initialData.regularTasks.some((child) => child.parentId === task.id))
@@ -1048,12 +1051,18 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   }
 
   const ordered = useMemo(() => orderedTasks(data.tasks), [data.tasks]);
-  const filteredTasks = useMemo(() => ordered.filter((task) => {
-    if (ganttFilter === "В работе") return task.status === "В работе" || task.status === "На проверке";
-    if (ganttFilter === "Просрочено") return isTaskOverdue(task, today);
-    return true;
-  }), [ordered, ganttFilter, today]);
-  const visibleTasks = useMemo(() => filteredTasks.filter((task) => !task.parentId || !collapsedTaskIds.has(task.parentId)), [filteredTasks, collapsedTaskIds]);
+  const filteredTasks = useMemo(() => {
+    const matches = (task: Task) => {
+      if (ganttFilter === "В работе") return task.status === "В работе" || task.status === "На проверке";
+      if (ganttFilter === "Просрочено") return isTaskOverdue(task, today);
+      return true;
+    };
+    return ordered.filter((task) => matches(task) || (!task.parentId && ordered.some((child) => child.parentId === task.id && matches(child))));
+  }, [ordered, ganttFilter, today]);
+  // Под фильтрами спринты показываются и у свёрнутых надзадач — иначе фильтр «Просрочено» был бы пустым.
+  const visibleTasks = useMemo(() => filteredTasks.filter((task) => !task.parentId || ganttFilter !== "Все" || !collapsedTaskIds.has(task.parentId)), [filteredTasks, collapsedTaskIds, ganttFilter]);
+  const parentIds = useMemo(() => data.tasks.filter((task) => !task.parentId && data.tasks.some((child) => child.parentId === task.id)).map((task) => task.id), [data.tasks]);
+  const anyCollapsed = parentIds.some((id) => collapsedTaskIds.has(id));
 
   // Таблица и шкала прокручиваются отдельно. Измеряем строки после переноса текста,
   // чтобы полосы сроков оставались напротив задач при изменении ширины и фильтров.
@@ -1775,6 +1784,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
         <div className="section-head">
           <div className="section-title-wrap"><h2>Дорожная карта</h2><nav>{(["Все", "В работе", "Просрочено"] as const).map((filter) => <button key={filter} className={ganttFilter === filter ? "active" : ""} onClick={() => setGanttFilter(filter)}>{filter}</button>)}</nav></div>
           <div className="roadmap-actions">
+            {parentIds.length > 0 && <button type="button" className="secondary" onClick={() => setCollapsedTaskIds(anyCollapsed ? new Set() : new Set(parentIds))}>{anyCollapsed ? "Развернуть всё" : "Свернуть всё"}</button>}
             <div className="baseline-control" onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBaselineMenuOpen(false);
             }}>
@@ -1823,6 +1833,11 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               const childCount = data.tasks.filter((child) => child.parentId === task.id).length;
               const isCollapsed = collapsedTaskIds.has(task.id);
               const progress = checkpointProgress(task, data.tasks);
+              const summary = !task.parentId && childCount > 0 ? parentSummary(task, data.tasks, todayKey) : null;
+              const shifts = isWorkTask(task, data.tasks) ? task.shifts ?? [] : [];
+              const lastShift = shifts[shifts.length - 1];
+              const waiting = isWorkTask(task, data.tasks) && taskCheckpoints(task).some(isWaitingClient);
+              const overdueNow = isWorkTask(task, data.tasks) && isTaskOverdue(task, today);
               return (
                 <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent") + (freshTaskIds.has(task.id) ? " fresh" : "")} key={task.id} data-task-id={task.id} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") setModal({ kind: "task", item: task });
@@ -1832,11 +1847,21 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
                     {!task.parentId && childCount === 0 && <span className="toggle-spacer" />}
                     {task.parentId && <i />}
                     <span className="task-title-content">
-                      {(task.template || Boolean(task.labels?.length) || childCount > 0 || (progress && progress.total > 0) || task.comments.length > 0) && <span className="task-title-meta">
+                      {(task.template || Boolean(task.labels?.length) || childCount > 0 || (progress && progress.total > 0) || task.comments.length > 0 || lastShift || overdueNow || waiting) && <span className="task-title-meta">
                         {task.template && <span className={"code-chip" + (task.parentId ? "" : " code-chip-parent")}>{task.template.subCode || task.template.code}</span>}
                         {task.labels?.map((label) => <span className={"code-chip task-label" + (task.parentId ? "" : " code-chip-parent")} key={label}>{label}</span>)}
                         {!task.parentId && childCount > 0 && <small className="child-count" title={childCount + " " + pluralSprints(childCount)}>{childCount}</small>}
                         {progress && progress.total > 0 && <small className={"progress-chip" + (progress.done === progress.total ? " progress-done" : "")} title={"Контрольные точки: " + progress.done + " из " + progress.total}><ProgressRing done={progress.done} total={progress.total} />{progress.done}/{progress.total}</small>}
+                        {summary && <>
+                          {summary.overdue > 0 && <span className="flag flag-red">{summary.overdue} {plural(summary.overdue, "спринт просрочен", "спринта просрочено", "спринтов просрочено")}</span>}
+                          {summary.shifted > 0 && <span className="flag flag-amber">{summary.shifted} {plural(summary.shifted, "перенесён", "перенесено", "перенесено")}</span>}
+                          {summary.waiting > 0 && <span className="flag flag-amber">ждём клиента: {summary.waiting}</span>}
+                          {summary.overdue + summary.shifted + summary.waiting === 0 && <span className="flag flag-teal">без отклонений</span>}
+                          <span className="flag-muted">{summary.closed} из {summary.total} закрыто</span>
+                        </>}
+                        {lastShift && <span className={"flag flag-" + shiftReasonInfo(lastShift.reason).tone}>перенос ×{shifts.length} · {shiftReasonInfo(lastShift.reason).short}</span>}
+                        {overdueNow && <span className="flag flag-red">новый срок не назначен</span>}
+                        {waiting && <span className="flag flag-amber">ждём клиента</span>}
                         {task.comments.length > 0 && <small><MessageSquareText size={12} />{task.comments.length}</small>}
                       </span>}
                       <b>{task.title}</b>
@@ -1858,6 +1883,9 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               <div className="gantt-bars">
                 {visibleTasks.map((task) => {
                   const shift = baselineShiftOf(task);
+                  // Без выбранного базового плана штрихуем путь от исходного срока до текущего.
+                  const ownFrom = originalEndDate(task);
+                  const ownShift = !baseline && (task.shifts?.length ?? 0) > 0 && ownFrom < task.endDate ? { from: addDays(ownFrom, 1), to: task.endDate } : null;
                   const shiftTitle = shift && baselineKey
                     ? "Базовый план на " + formatShortDate(baselineKey) + ": " + formatShortDate(shift.base.startDate) + " — " + formatShortDate(shift.base.endDate)
                       + (shift.days === 0 ? "" : ", дедлайн " + (shift.days > 0 ? "+" : "−") + Math.abs(shift.days) + " " + pluralDays(Math.abs(shift.days)))
@@ -1870,6 +1898,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
                     <div className="gantt-row" key={task.id} style={{ height: taskRowHeights[task.id] ?? 46 }}>
                       <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task, today) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)} title={task.title + " · " + formatShortDate(task.startDate) + " — " + formatShortDate(task.endDate) + (progress && progress.total > 0 ? " · точки " + progress.done + "/" + progress.total : "")}><span>{task.title}</span>{marks.length === 0 && <i />}</button>
                       {shift?.segments.map((segment) => <i key={segment.id} className={"gantt-delta" + (segment.inside ? "" : " gantt-delta-outside") + (task.parentId ? "" : " gantt-delta-parent")} style={ganttBarStyle(segment.from, segment.to)} title={shiftTitle} />)}
+                      {ownShift && <i className={"gantt-delta" + (task.parentId ? "" : " gantt-delta-parent")} style={ganttBarStyle(ownShift.from, ownShift.to)} title={"Исходный срок " + formatShortDate(ownFrom) + " · переносов: " + task.shifts!.length} />}
                       {marks.map((mark) => (
                         <button type="button" key={mark.date} className="cp-hit" style={{ left: ganttDayCenter(mark.date) + "%" }} aria-label={"Контрольные точки на " + formatCheckpointDate(mark.date)}
                           onClick={() => { setCheckpointTip(null); setModal({ kind: "task", item: task, focusDate: mark.date }); }}
