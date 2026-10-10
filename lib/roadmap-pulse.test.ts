@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closedMonthOf, isTaskCompleted, isWorkTask, monthClosing, parentSummary, sprintHealth } from "./roadmap-pulse";
+import { closedMonthOf, closingDateError, closingMonthKey, isTaskCompleted, isWorkTask, monthClosing, parentSummary, sprintHealth } from "./roadmap-pulse";
 import type { Checkpoint, RegularTask, Task } from "./types";
 
 const TODAY = "2026-10-10";
@@ -88,5 +88,19 @@ describe("monthClosing", () => {
   it("без ежемесячных задач — не заведено", () => {
     expect(monthClosing([{ ...manager(), frequency: "weekly" }], TODAY)).toEqual({ state: "none" });
     expect(monthClosing([], TODAY)).toEqual({ state: "none" });
+  });
+});
+
+describe("ручное закрытие месяца", () => {
+  it("закрывается прошлый месяц", () => {
+    expect(closingMonthKey("2026-10-10")).toBe("2026-09");
+    expect(closingMonthKey("2026-01-05")).toBe("2025-12");
+  });
+  it("проверяет дату закрытия", () => {
+    expect(closingDateError("", "2026-09", TODAY)).toBe("Укажите дату закрытия.");
+    expect(closingDateError("2026-10-11", "2026-09", TODAY)).toBe("Дата закрытия не может быть позже сегодняшнего дня.");
+    expect(closingDateError("2026-08-31", "2026-09", TODAY)).toBe("Месяц не может быть закрыт раньше, чем начался.");
+    expect(closingDateError("2026-09-30", "2026-09", TODAY)).toBe("");
+    expect(closingDateError("2026-10-10", "2026-09", TODAY)).toBe("");
   });
 });

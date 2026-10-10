@@ -168,4 +168,7 @@ export interface DashboardData {
   regularTasks: RegularTask[];
   reports: AccountingReport[];
   baselines: Baselines;
+  // Ручные отметки закрытия месяца: «ГГГГ-ММ» закрываемого месяца → день закрытия.
+  // Если отметка есть, она главнее расчёта по ежемесячным регулярным задачам.
+  monthClosings?: Record<string, string>;
 }

@@ -1,5 +1,5 @@
 import { isWaitingClient } from "./checkpoint-tracking";
-import { parseDate, toISO } from "./dates";
+import { isValidDateValue, parseDate, toISO } from "./dates";
 import { getPlannedDates, occurrenceStatus } from "./regular-schedule";
 import { taskCheckpoints } from "./typical-tasks";
 import type { RegularTask, Task } from "./types";
@@ -79,4 +79,17 @@ export function monthClosing(regularTasks: RegularTask[], today: string): MonthC
     return { state: "pending", month: target, done, total, nextDate: items.find((item) => item.status === "Запланировано")!.date };
   }
   return { state: "ok", month: target, total };
+}
+
+// Ключ закрываемого месяца — прошлого относительно сегодня, «ГГГГ-ММ».
+export function closingMonthKey(today: string) {
+  const now = parseDate(today);
+  return toISO(new Date(now.getFullYear(), now.getMonth() - 1, 1, 12)).slice(0, 7);
+}
+
+export function closingDateError(date: string, monthKey: string, today: string) {
+  if (!date || !isValidDateValue(date)) return "Укажите дату закрытия.";
+  if (date > today) return "Дата закрытия не может быть позже сегодняшнего дня.";
+  if (date < monthKey + "-01") return "Месяц не может быть закрыт раньше, чем начался.";
+  return "";
 }

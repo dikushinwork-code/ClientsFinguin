@@ -30,7 +30,8 @@ import type { PersonPickerProps } from "@/components/person-select";
 import { ShiftHistory, ShiftReasonFields } from "@/components/shift-reason";
 import TemplateDialog from "@/components/template-dialog";
 import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, parseDate, toISO } from "@/lib/dates";
-import { monthClosing, sprintHealth } from "@/lib/roadmap-pulse";
+import { closingMonthKey, monthClosing, sprintHealth } from "@/lib/roadmap-pulse";
+import MonthClosingPopover from "@/components/month-closing-popover";
 import { plural } from "@/lib/plural";
 import { appendShift, needsShiftReason, validateShift } from "@/lib/task-shifts";
 import {
@@ -1128,6 +1129,11 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
       : "Выполнено " + closing.done + " из " + closing.total + " · " + (closing.state === "late"
         ? "просрочено: " + closing.late.map((item) => item.title + " (срок " + formatDayShortMonth(item.plannedDate) + ") — " + (item.note ? item.note[0].toLowerCase() + item.note.slice(1) : "причина не указана")).join("; ")
         : "следующий срок " + formatDayShortMonth(closing.nextDate));
+  const closingKey = closingMonthKey(todayKey);
+  const closingMonth = Number(closingKey.slice(5, 7)) - 1;
+  const manualClosedAt = data.monthClosings?.[closingKey];
+  const [closingOpen, setClosingOpen] = useState(false);
+  const closeClosing = useCallback(() => setClosingOpen(false), []);
   const roadmapRef = useRef<HTMLElement | null>(null);
   const meetingsRef = useRef<HTMLElement | null>(null);
   const regularRef = useRef<HTMLElement | null>(null);
@@ -1272,6 +1278,22 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   function deletePerson(person: string) {
     const key = person.toLocaleLowerCase("ru");
     commit((current) => ({ ...current, people: current.people.filter((item) => item.toLocaleLowerCase("ru") !== key) }));
+  }
+
+  function saveManualClosing(date: string) {
+    commit((current) => ({ ...current, monthClosings: { ...(current.monthClosings ?? {}), [closingKey]: date } }));
+    setClosingOpen(false);
+    showToast(MONTHS[closingMonth] + " отмечен закрытым " + formatDayShortMonth(date));
+  }
+
+  function clearManualClosing() {
+    commit((current) => {
+      const monthClosings = { ...(current.monthClosings ?? {}) };
+      delete monthClosings[closingKey];
+      return { ...current, monthClosings };
+    });
+    setClosingOpen(false);
+    showToast("Отметка снята — закрытие считается по регулярным задачам");
   }
 
   function saveTask(task: Task) {
@@ -1707,6 +1729,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
       {activePage === "roadmap" ? <>
 
+      <div className="pulse-wrap">
       <section className="pulse" aria-label="Состояние клиента">
         <button type="button" className={"tile " + (hasTwoMonthPlan ? "ok" : "bad")} onClick={() => { setGanttFilter("Все"); roadmapRef.current?.scrollIntoView({ behavior: "smooth" }); }}>
           <span className="tile-icon">{hasTwoMonthPlan ? <Check size={18} /> : <CircleAlert size={18} />}</span>
@@ -1720,11 +1743,11 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
           <strong>{health.overdue ? health.overdue + " " + plural(health.overdue, "просрочен", "просрочено", "просрочено") + " из " + health.current : "Все " + health.current + " в срок"}</strong>
           <span className="tile-note">{health.shifted ? health.shifted + " " + plural(health.shifted, "перенесён", "перенесены", "перенесены") + " с причиной" : "Переносов нет"}</span>
         </button>
-        <button type="button" className={"tile " + (closing.state === "late" ? "bad" : closing.state === "none" ? "warn" : "ok")} onClick={() => regularRef.current?.scrollIntoView({ behavior: "smooth" })}>
+        <button type="button" data-closing-tile aria-expanded={closingOpen} className={"tile " + (manualClosedAt || closing.state === "ok" || closing.state === "pending" ? "ok" : closing.state === "late" ? "bad" : "warn")} onClick={() => setClosingOpen((open) => !open)}>
           <span className="tile-icon"><Repeat2 size={18} /></span>
           <small>Закрытие месяца</small>
-          <strong>{closing.state === "none" ? "Не заведено" : MONTHS[closing.month] + (closing.state === "late" ? " не закрыт" : closing.state === "ok" ? " закрыт" : " закрывается")}</strong>
-          <span className="tile-note">{closingNote}</span>
+          <strong>{manualClosedAt ? MONTHS[closingMonth] + " закрыт" : closing.state === "none" ? "Не заведено" : MONTHS[closingMonth] + (closing.state === "late" ? " не закрыт" : closing.state === "ok" ? " закрыт" : " закрывается")}</strong>
+          <span className="tile-note">{manualClosedAt ? "Закрыт вручную " + formatDayShortMonth(manualClosedAt) : closingNote}</span>
         </button>
         <button type="button" className={"tile " + (nextMeeting ? "ok" : "bad")} onClick={() => { if (nextMeeting) focusMeetingDate(nextMeeting.plannedDate); meetingsRef.current?.scrollIntoView({ behavior: "smooth" }); }}>
           <span className="tile-icon"><CalendarDays size={18} /></span>
@@ -1733,6 +1756,20 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
           <span className="tile-note">{nextMeeting?.title || "Добавьте встречу"}</span>
         </button>
       </section>
+        {closingOpen && (
+          <MonthClosingPopover
+            key={closingKey + (manualClosedAt ?? "")}
+            monthKey={closingKey}
+            closing={closing}
+            manualDate={manualClosedAt}
+            today={todayKey}
+            onSave={saveManualClosing}
+            onClear={clearManualClosing}
+            onOpenRegular={() => { setClosingOpen(false); regularRef.current?.scrollIntoView({ behavior: "smooth" }); }}
+            onClose={closeClosing}
+          />
+        )}
+      </div>
 
       <section className="card roadmap-card" ref={roadmapRef}>
         <div className="section-head">

@@ -310,6 +310,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .month-pills .yes { color: #087555; background: #e2f5ed; }
 .month-pills .no { color: #c4353b; background: #ffeded; }
 @media (prefers-reduced-motion: reduce) { .tile { transition: none; } }
+/* Окно ручной отметки закрытия месяца — под третьей плиткой */
+.pulse-wrap { position: relative; }
+.closing-pop { position: absolute; z-index: 60; top: calc(100% + 6px); left: calc(50% + 6px); width: 340px; max-width: 100%; padding: 12px 14px; display: grid; gap: 10px; border: 1px solid #dbe3ee; border-radius: 11px; background: #fff; box-shadow: 0 12px 30px rgba(20, 37, 65, .16); }
+.closing-pop .field { margin-bottom: 0; }
+.closing-pop .form-error { margin: 0; }
+.closing-pop-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.closing-pop-head .icon-button { width: 28px; height: 28px; }
+.closing-pop-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: #4e5b70; font-size: 12px; }
+.closing-pop-muted { margin: 0; color: #7d8797; font-size: 11px; line-height: 1.4; }
+.closing-pop-manual { padding: 7px 10px; display: flex; align-items: center; gap: 6px; border-radius: 8px; background: #e2f5ed; color: #087a59; font-size: 12px; font-weight: 650; }
+.closing-pop-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.closing-pop-link { justify-self: start; padding: 0; border: 0; background: none; color: var(--blue); font-size: 12px; font-weight: 650; }
+.closing-pop-link:hover { text-decoration: underline; }
 
 .card {
   overflow: hidden;
@@ -1373,6 +1386,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .company-link { margin-left: auto; }
   .save-indicator { width: 100%; margin-left: 0; }
   .pulse { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .closing-pop { left: 0; }
   .section-head { padding: 10px 12px; align-items: flex-start; }
   .section-title-wrap { align-items: flex-start; flex-direction: column; gap: 8px; }
   .section-title-wrap nav { gap: 16px; }
