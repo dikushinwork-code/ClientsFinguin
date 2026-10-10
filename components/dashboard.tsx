@@ -29,7 +29,9 @@ import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
 import { ShiftHistory, ShiftReasonFields } from "@/components/shift-reason";
 import TemplateDialog from "@/components/template-dialog";
-import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, parseDate, toISO } from "@/lib/dates";
+import WeekReportView from "@/components/week-report";
+import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, parseDate, startOfWeek, toISO } from "@/lib/dates";
+import { formatWeekRange, weekAgeLabel, weekBounds } from "@/lib/week-report";
 import { closingMonthKey, isWorkTask, monthClosing, parentSummary, sprintHealth } from "@/lib/roadmap-pulse";
 import MonthClosingPopover from "@/components/month-closing-popover";
 import { plural } from "@/lib/plural";
@@ -935,7 +937,9 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   // Выбор охвата для встречи из серии: удалить/поправить одну, хвост или всю серию.
   // Карточка встречи на это время закрывается, а её черновик ждёт здесь.
   const [seriesPrompt, setSeriesPrompt] = useState<{ mode: "delete" | "edit"; meeting: Meeting; draft: Meeting | null } | null>(null);
-  const [ganttFilter, setGanttFilter] = useState<"Все" | "В работе" | "Просрочено">("Все");
+  const [ganttFilter, setGanttFilter] = useState<"Все" | "В работе" | "Просрочено" | "Неделя">("Все");
+  // Пока неделю не листали, показываем текущую — она сама сдвигается со сменой суток.
+  const [pickedWeek, setPickedWeek] = useState<string | null>(null);
   const [baselineDate, setBaselineDate] = useState("");
   const [baselineMenuOpen, setBaselineMenuOpen] = useState(false);
   // Надзадачи со спринтами при открытии свёрнуты: сводка в строке показывает, где проблема.
@@ -978,6 +982,8 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   // расхождение при гидратации, а сразу после неё React возьмёт браузерный снимок.
   const getServerToday = useCallback(() => serverToday, [serverToday]);
   const todayKey = useSyncExternalStore(subscribeToDayChange, getTodayKey, getServerToday);
+  const weekStart = pickedWeek ?? startOfWeek(todayKey);
+  const weekRange = useMemo(() => weekBounds(data.tasks, todayKey), [data.tasks, todayKey]);
   const today = useMemo(() => parseDate(todayKey), [todayKey]);
   const calendarMonth = useMemo(() => pickedCalendarMonth ?? startOfMonth(today), [pickedCalendarMonth, today]);
 
@@ -1782,8 +1788,15 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
       <section className="card roadmap-card" ref={roadmapRef}>
         <div className="section-head">
-          <div className="section-title-wrap"><h2>Дорожная карта</h2><nav>{(["Все", "В работе", "Просрочено"] as const).map((filter) => <button key={filter} className={ganttFilter === filter ? "active" : ""} onClick={() => setGanttFilter(filter)}>{filter}</button>)}</nav></div>
+          <div className="section-title-wrap"><h2>Дорожная карта</h2><nav>{(["Все", "В работе", "Просрочено", "Неделя"] as const).map((filter) => <button key={filter} className={ganttFilter === filter ? "active" : ""} onClick={() => setGanttFilter(filter)}>{filter}</button>)}</nav></div>
           <div className="roadmap-actions">
+            {ganttFilter === "Неделя" ? (
+              <div className="wk-switch">
+                <button type="button" className="icon-button" aria-label="Предыдущая неделя" disabled={weekStart <= weekRange.first} onClick={() => setPickedWeek(addDays(weekStart, -7))}><ChevronLeft size={16} /></button>
+                <strong>{formatWeekRange(weekStart)}<small>{weekAgeLabel(weekStart, todayKey)}</small></strong>
+                <button type="button" className="icon-button" aria-label="Следующая неделя" disabled={weekStart >= weekRange.last} onClick={() => setPickedWeek(addDays(weekStart, 7) >= weekRange.last ? null : addDays(weekStart, 7))}><ChevronRight size={16} /></button>
+              </div>
+            ) : (<>
             {parentIds.length > 0 && <button type="button" className="secondary" onClick={() => setCollapsedTaskIds(anyCollapsed ? new Set() : new Set(parentIds))}>{anyCollapsed ? "Развернуть всё" : "Свернуть всё"}</button>}
             <div className="baseline-control" onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBaselineMenuOpen(false);
@@ -1824,9 +1837,12 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
             <button className="secondary today-button" onClick={() => scrollGanttToDate(toISO(today))}><CalendarDays size={16} />Сегодня</button>
             <button className="secondary template-button" onClick={() => setModal({ kind: "template" })}><ClipboardCheck size={16} />Типовая задача</button>
             <button className="primary" onClick={() => setModal({ kind: "task", item: null })}><Plus size={17} />Новая задача</button>
+            </>)}
           </div>
         </div>
-        <div className="gantt-grid">
+        {ganttFilter === "Неделя"
+          ? <WeekReportView tasks={data.tasks} today={todayKey} weekStart={weekStart} onOpenTask={(task) => setModal({ kind: "task", item: task })} />
+          : <div className="gantt-grid">
           <div className="task-table" ref={taskTableRef}>
             <div className="task-table-head"><span>Задача</span><span>Ответственный</span><span>Статус</span><span>Срок</span></div>
             {visibleTasks.map((task) => {
@@ -1914,7 +1930,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               </div>
             </div>
           </div>
-        </div>
+        </div>}
       </section>
       {checkpointTip && (
         <div className="cp-tip" role="tooltip" style={{ left: Math.min(Math.max(checkpointTip.rect.left + checkpointTip.rect.width / 2, 158), window.innerWidth - 158), top: checkpointTip.rect.bottom + 6 }}>
