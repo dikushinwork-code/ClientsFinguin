@@ -2,11 +2,12 @@
 
 import { Info, LoaderCircle, MessageSquare } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CONTROL_ITEMS,
   CONTROL_MEETING_RULES,
   CONTROL_QUESTIONS,
+  MAX_TEXT,
   badWeeks,
   controlWeeks,
   emptyWeek,
@@ -26,8 +27,8 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 async function fetchControl(signal?: AbortSignal): Promise<ControlData | null> {
   const response = await fetch("/api/control", { cache: "no-store", signal });
   if (response.status === 401) return null;
-  const payload = (await response.json().catch(() => ({}))) as { data?: ControlData; error?: string };
-  if (!response.ok || !payload.data) throw new Error(payload.error || "Не удалось загрузить отметки");
+  const payload = (await response.json().catch(() => ({}))) as { data?: ControlData };
+  if (!response.ok || !payload.data) throw new Error("Не удалось загрузить отметки");
   return payload.data;
 }
 
@@ -100,12 +101,16 @@ function markLabel(mark: ControlMark | undefined) {
 export default function ControlBoard({ today }: { today: string }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [data, setData] = useState<ControlData>({ weeks: {} });
-  const [message, setMessage] = useState("");
+  const [loginError, setLoginError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Неотправленные правки по неделям, неделя с запросом «в пути» и признак живого компонента.
+  const dirty = useRef(new Map<string, ControlWeek>());
+  const sending = useRef(new Set<string>());
+  const alive = useRef(true);
   const panelRef = useRef<HTMLElement>(null);
 
   const weeks = useMemo(() => controlWeeks(today), [today]);
@@ -125,32 +130,71 @@ export default function ControlBoard({ today }: { today: string }) {
       })
       .catch((reason: Error) => {
         if (reason.name === "AbortError") return;
-        setMessage(reason.message);
         setPhase("error");
       });
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach((timer) => clearTimeout(timer));
+  // Одна неделя — один запрос за раз: правки, пришедшие во время отправки, уходят следом (только последние).
+  const flush = useCallback(async (weekStart: string) => {
+    if (sending.current.has(weekStart)) return;
+    sending.current.add(weekStart);
+    try {
+      // Пока есть свежая правка без ожидающего таймера, отправляем её следом.
+      while (dirty.current.has(weekStart) && (!timers.current.has(weekStart) || !alive.current)) {
+        const week = dirty.current.get(weekStart);
+        dirty.current.delete(weekStart);
+        try {
+          const response = await fetch("/api/control", {
+            method: "PUT",
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ weekStart, week }),
+            keepalive: !alive.current,
+          });
+          if (response.status === 401) {
+            if (alive.current) setPhase("locked");
+          } else if (!response.ok) {
+            throw new Error();
+          } else if (alive.current) {
+            setSaveError("");
+          }
+        } catch {
+          if (alive.current) setSaveError("Не удалось сохранить отметки. Проверьте подключение и повторите.");
+        }
+      }
+    } finally {
+      sending.current.delete(weekStart);
+    }
   }, []);
+
+  // При уходе со страницы отправляем неотправленные правки сразу, не дожидаясь паузы.
+  useEffect(() => {
+    alive.current = true;
+    const pending = timers.current;
+    const unsent = dirty.current;
+    return () => {
+      alive.current = false;
+      pending.forEach((timer) => clearTimeout(timer));
+      pending.clear();
+      [...unsent.keys()].forEach((weekStart) => void flush(weekStart));
+    };
+  }, [flush]);
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setMessage("");
+    setLoginError("");
     try {
       const response = await fetch("/api/control/login", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ password }) });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "Не удалось войти");
+      if (response.status === 401) throw new Error("Неверный пароль");
+      if (!response.ok) throw new Error("Не удалось войти");
       const loaded = await fetchControl();
       if (!loaded) throw new Error("Не удалось войти");
       setData(loaded);
       setPassword("");
       setPhase("ready");
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "Не удалось войти");
+      setLoginError(reason instanceof Error ? reason.message : "Не удалось войти");
     } finally {
       setBusy(false);
     }
@@ -159,19 +203,10 @@ export default function ControlBoard({ today }: { today: string }) {
   function saveWeek(weekStart: string, week: ControlWeek) {
     const pending = timers.current;
     clearTimeout(pending.get(weekStart));
-    pending.set(weekStart, setTimeout(async () => {
+    dirty.current.set(weekStart, week);
+    pending.set(weekStart, setTimeout(() => {
       pending.delete(weekStart);
-      try {
-        const response = await fetch("/api/control", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ weekStart, week }) });
-        if (response.status === 401) {
-          setPhase("locked");
-          return;
-        }
-        if (!response.ok) throw new Error();
-        setSaveError("");
-      } catch {
-        setSaveError("Не удалось сохранить отметки. Проверьте подключение и повторите.");
-      }
+      void flush(weekStart);
     }, 450));
   }
 
@@ -185,7 +220,7 @@ export default function ControlBoard({ today }: { today: string }) {
     return <div className="ctl-state"><LoaderCircle size={16} className="spin" />Загрузка</div>;
   }
   if (phase === "error") {
-    return <div className="ctl-state ctl-error">{message}</div>;
+    return <div className="ctl-state ctl-error">Не удалось загрузить отметки</div>;
   }
   if (phase === "locked") {
     return (
@@ -201,7 +236,7 @@ export default function ControlBoard({ today }: { today: string }) {
           autoFocus
         />
         <button type="submit" disabled={busy || !password}>Войти</button>
-        {message && <p className="ctl-error">{message}</p>}
+        {loginError && <p className="ctl-error">{loginError}</p>}
       </form>
     );
   }
@@ -330,6 +365,7 @@ export default function ControlBoard({ today }: { today: string }) {
                 <span className="is-bad">✗ {item.title}</span>
                 <textarea
                   rows={2}
+                  maxLength={MAX_TEXT}
                   value={week.notes[item.id] ?? ""}
                   placeholder="Что не так и что делаем"
                   onChange={(event) => {
@@ -352,6 +388,7 @@ export default function ControlBoard({ today }: { today: string }) {
                 <span>{question.label}</span>
                 <textarea
                   rows={2}
+                  maxLength={MAX_TEXT}
                   value={week.answers[question.id] ?? ""}
                   placeholder="Если карта не отвечает — запишите ответ"
                   onChange={(event) => {

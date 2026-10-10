@@ -147,7 +147,7 @@ export function badWeeks(data: ControlData, id: ControlItemId, weeks: string[]) 
 
 const ITEM_IDS = new Set<string>(CONTROL_ITEMS.map((item) => item.id));
 const QUESTION_IDS = new Set<string>(CONTROL_QUESTIONS.map((question) => question.id));
-const MAX_TEXT = 2000;
+export const MAX_TEXT = 2000;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
