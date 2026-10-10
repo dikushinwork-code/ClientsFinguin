@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  ChartGantt,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import AccountingPolicy from "@/components/accounting-policy";
-import CheckpointsEditor, { ProgressRing } from "@/components/checkpoints-editor";
+import CheckpointsEditor, { formatCheckpointDate, ProgressRing } from "@/components/checkpoints-editor";
 import ModalShell from "@/components/modal-shell";
 import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
@@ -53,7 +54,13 @@ import type {
   Task,
   TaskStatus,
 } from "@/lib/types";
-import { checkpointProgress, nextCheckpointCode } from "@/lib/typical-tasks";
+import { calendarBucket, collectCalendarTasks } from "@/lib/calendar-items";
+import type { CalendarTask, CalendarTaskSource } from "@/lib/calendar-items";
+import { getPlannedDates, occurrenceStatus, regularMonthStatus } from "@/lib/regular-schedule";
+import type { RegularStatus } from "@/lib/regular-schedule";
+import { checkpointDate, checkpointMarks, checkpointState } from "@/lib/checkpoint-dates";
+import type { CheckpointMark } from "@/lib/checkpoint-dates";
+import { checkpointProgress, nextCheckpointCode, taskCheckpoints } from "@/lib/typical-tasks";
 import type { TypicalTaskTemplate } from "@/lib/typical-tasks";
 
 const TASK_STATUSES: TaskStatus[] = ["Не начато", "В работе", "На проверке", "Завершено", "Просрочено"];
@@ -103,7 +110,7 @@ const MONTHS_GENITIVE = ["января", "февраля", "марта", "апр
 
 type SaveStatus = "loading" | "saved" | "saving" | "error";
 type ModalState =
-  | { kind: "task"; item: Task | null }
+  | { kind: "task"; item: Task | null; focusDate?: string }
   | { kind: "idea"; item: Idea | null }
   | { kind: "meeting"; item: Meeting | null }
   | { kind: "regular-task"; item: RegularTask | null }
@@ -221,6 +228,47 @@ function frequencyLabel(frequency: RegularFrequency) {
   return REGULAR_FREQUENCIES.find((item) => item.value === frequency)?.label || frequency;
 }
 
+type CalendarSource = "meeting" | CalendarTaskSource;
+const CALENDAR_SOURCES: Array<{ key: CalendarSource; label: string }> = [
+  { key: "meeting", label: "Встречи" },
+  { key: "gantt", label: "Дорожная карта" },
+  { key: "regular", label: "Регулярные" },
+  { key: "checkpoint", label: "Контрольные точки" },
+];
+const CALENDAR_SOURCE_ORDER: Record<CalendarTaskSource, number> = { gantt: 0, regular: 1, checkpoint: 2 };
+const WEEKDAYS_FULL = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+const WEEKDAYS_SHORT = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+// Хвост просрочек на сегодняшнем дне: дальше трёх месяцев назад не заглядываем,
+// иначе давно забытые отметки регулярных задач заполнили бы весь список.
+const OVERDUE_TAIL_DAYS = 90;
+
+type MeetingOccurrence = { meeting: Meeting; isPlan: boolean; isFact: boolean; time: string };
+
+function calendarStatusClass(status: string) {
+  if (status === "Просрочено") return "status status-danger";
+  if (status === "Завершено" || status === "Выполнено") return "status status-success";
+  if (status === "С опозданием" || status === "На проверке") return "status status-warning";
+  if (status === "В работе") return "status status-info";
+  return "status status-neutral";
+}
+
+function personInitials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+
+function pluralOverdue(count: number) {
+  return count + " " + (count % 10 === 1 && count % 100 !== 11 ? "просрочена" : "просрочено");
+}
+
+function formatWeekdayDate(value: string) {
+  return WEEKDAYS_FULL[parseDate(value).getDay()] + ", " + formatShortDate(value);
+}
+
+function formatAgendaDate(value: string) {
+  const date = parseDate(value);
+  return date.getDate() + " " + MONTHS_GENITIVE[date.getMonth()].slice(0, 3) + ", " + WEEKDAYS_SHORT[date.getDay()];
+}
+
 function orderedRegularTasks(tasks: RegularTask[]) {
   const parents = tasks.filter((task) => !task.parentId);
   const result: RegularTask[] = [];
@@ -230,53 +278,6 @@ function orderedRegularTasks(tasks: RegularTask[]) {
   });
   result.push(...tasks.filter((task) => task.parentId && !tasks.some((parent) => parent.id === task.parentId)));
   return result;
-}
-
-function getPlannedDates(task: RegularTask, monthStartValue: string) {
-  const anchor = parseDate(task.anchorDate);
-  const monthStart = parseDate(monthStartValue);
-  if (Number.isNaN(anchor.getTime()) || Number.isNaN(monthStart.getTime())) return [];
-  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0, 12);
-  if (anchor > monthEnd) return [];
-
-  if (task.frequency === "weekly") {
-    const cursor = new Date(anchor);
-    if (cursor < monthStart) {
-      const days = Math.ceil((monthStart.getTime() - cursor.getTime()) / 86400000);
-      cursor.setDate(cursor.getDate() + Math.ceil(days / 7) * 7);
-    }
-    const dates: string[] = [];
-    while (cursor <= monthEnd) {
-      dates.push(toISO(cursor));
-      cursor.setDate(cursor.getDate() + 7);
-    }
-    return dates;
-  }
-
-  const anchorMonth = anchor.getFullYear() * 12 + anchor.getMonth();
-  const targetMonth = monthStart.getFullYear() * 12 + monthStart.getMonth();
-  const monthDifference = targetMonth - anchorMonth;
-  if (monthDifference < 0 || (task.frequency === "quarterly" && monthDifference % 3 !== 0)) return [];
-  const plannedDay = Math.min(anchor.getDate(), monthEnd.getDate());
-  return [toISO(new Date(monthStart.getFullYear(), monthStart.getMonth(), plannedDay, 12))];
-}
-
-type RegularStatus = "Выполнено" | "С опозданием" | "Просрочено" | "Запланировано" | "Частично";
-
-function occurrenceStatus(plannedDate: string, record: RegularRecord | undefined, today: Date): RegularStatus {
-  if (record?.actualDate) return record.actualDate <= plannedDate ? "Выполнено" : "С опозданием";
-  return parseDate(plannedDate) < today ? "Просрочено" : "Запланировано";
-}
-
-function regularMonthStatus(task: RegularTask, monthStart: string, today: Date): RegularStatus | null {
-  const plannedDates = getPlannedDates(task, monthStart);
-  if (plannedDates.length === 0) return null;
-  const statuses = plannedDates.map((date) => occurrenceStatus(date, task.records[date], today));
-  if (statuses.includes("Просрочено")) return "Просрочено";
-  if (statuses.every((status) => status === "Выполнено")) return "Выполнено";
-  if (statuses.every((status) => status === "Выполнено" || status === "С опозданием")) return "С опозданием";
-  if (statuses.some((status) => status === "Выполнено" || status === "С опозданием")) return "Частично";
-  return "Запланировано";
 }
 
 function regularStatusClass(status: RegularStatus) {
@@ -433,6 +434,8 @@ function TaskDialog({
   item,
   tasks,
   people,
+  today,
+  focusDate,
   onAddPerson,
   onDeletePerson,
   onClose,
@@ -443,6 +446,8 @@ function TaskDialog({
   item: Task | null;
   tasks: Task[];
   people: string[];
+  today: string;
+  focusDate?: string;
   onAddPerson: (person: string) => void;
   onDeletePerson: (person: string) => void;
   onClose: () => void;
@@ -518,7 +523,7 @@ function TaskDialog({
           </div>
           {hasChecklist && (
             <>
-              <CheckpointsEditor groups={draft.groups ?? []} nextCode={() => nextCheckpointCode(draft)} onChange={(groups) => setDraft({ ...draft, groups })} />
+              <CheckpointsEditor groups={draft.groups ?? []} nextCode={() => nextCheckpointCode(draft)} onChange={(groups) => setDraft({ ...draft, groups })} startDate={draft.startDate} endDate={draft.endDate} today={today} defaultAssignee={draft.assignee} people={people} onAddPerson={onAddPerson} highlightDate={focusDate} />
               {checklistAllDone && draft.status !== "Завершено" && (
                 <div className="all-done">✓ Все контрольные точки отмечены — {isTemplateSprint ? "спринт" : "задачу"} можно закрывать.<button type="button" onClick={() => setDraft({ ...draft, status: "Завершено" })}>Отметить завершённым</button></div>
               )}
@@ -914,6 +919,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   const [saveErrorMessage, setSaveErrorMessage] = useState("");
   const [storageMode, setStorageMode] = useState<"postgres" | "local">(initialStorage ?? "local");
   const [modal, setModal] = useState<ModalState>(null);
+  const [checkpointTip, setCheckpointTip] = useState<{ task: Task; mark: CheckpointMark; rect: DOMRect } | null>(null);
   // Выбор охвата для встречи из серии: удалить/поправить одну, хвост или всю серию.
   // Карточка встречи на это время закрывается, а её черновик ждёт здесь.
   const [seriesPrompt, setSeriesPrompt] = useState<{ mode: "delete" | "edit"; meeting: Meeting; draft: Meeting | null } | null>(null);
@@ -932,6 +938,8 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   const [editingClient, setEditingClient] = useState(false);
   const [clientDraft, setClientDraft] = useState(initialData.clientName);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [calendarSources, setCalendarSources] = useState<Set<CalendarSource>>(() => new Set(CALENDAR_SOURCES.map((source) => source.key)));
+  const [calendarPerson, setCalendarPerson] = useState("");
   // Пока пользователь не пролистнул календарь руками, он следует за текущим месяцем.
   // После первого ручного перехода выбор живёт здесь и больше никуда не съезжает.
   const [pickedCalendarMonth, setPickedCalendarMonth] = useState<Date | null>(null);
@@ -1110,7 +1118,9 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
   const ganttRange = useMemo(() => {
     const baselineDatesInPlay = baseline ? Object.values(baseline).flatMap((base) => [parseDate(base.startDate), parseDate(base.endDate)]) : [];
-    const dates = [today, ...data.tasks.flatMap((task) => [parseDate(task.startDate), parseDate(task.endDate)]), ...baselineDatesInPlay].filter((date) => !Number.isNaN(date.getTime()));
+    // Срок точки может выходить за неделю подзадачи — шкала растягивается и под него.
+    const checkpointDates = data.tasks.filter((task) => task.parentId).flatMap((task) => taskCheckpoints(task).map(checkpointDate).filter(Boolean).map(parseDate));
+    const dates = [today, ...data.tasks.flatMap((task) => [parseDate(task.startDate), parseDate(task.endDate)]), ...checkpointDates, ...baselineDatesInPlay].filter((date) => !Number.isNaN(date.getTime()));
     const minDate = dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : today;
     const maxDate = dates.length ? new Date(Math.max(...dates.map((date) => date.getTime()))) : new Date(2026, 8, 30, 12);
     const start = new Date(minDate.getFullYear(), minDate.getMonth(), 1, 12);
@@ -1140,21 +1150,87 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
     });
   }, [data.ideas, ideaSearch, ideaStatus, ideaPriority]);
 
-  const calendarCells = useMemo(() => {
+  // Сетка календаря — шесть недель, начиная с понедельника той недели, где первое число месяца.
+  const calendarDays = useMemo(() => {
     const first = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1, 12);
-    const mondayIndex = (first.getDay() + 6) % 7;
     const start = new Date(first);
-    start.setDate(first.getDate() - mondayIndex);
+    start.setDate(first.getDate() - (first.getDay() + 6) % 7);
     return Array.from({ length: 42 }, (_, index) => {
       const date = new Date(start);
       date.setDate(start.getDate() + index);
-      const iso = toISO(date);
-      const meetingsOnDate = data.meetings.filter((meeting) => (meeting.status !== "cancelled" && meeting.plannedDate === iso) || (meeting.status === "completed" && meeting.actualDate === iso));
-      const hasPlan = meetingsOnDate.some((meeting) => meeting.status !== "cancelled" && meeting.plannedDate === iso);
-      const hasFact = meetingsOnDate.some((meeting) => meeting.status === "completed" && meeting.actualDate === iso);
-      return { date, iso, hasPlan, hasFact, count: new Set(meetingsOnDate.map((meeting) => meeting.id)).size, inMonth: date.getMonth() === calendarMonth.getMonth() };
+      return date;
     });
-  }, [calendarMonth, data.meetings]);
+  }, [calendarMonth]);
+
+  const isCalendarTaskVisible = useCallback((item: CalendarTask) => (
+    calendarSources.has(item.source) && (!calendarPerson || item.assignee === calendarPerson)
+  ), [calendarSources, calendarPerson]);
+
+  // Задачи всех источников на видимые шесть недель, разложенные по дням.
+  const calendarTasksByDate = useMemo(() => {
+    const items = collectCalendarTasks({ tasks: data.tasks, regularTasks: data.regularTasks }, toISO(calendarDays[0]), toISO(calendarDays[calendarDays.length - 1]), todayKey)
+      .filter(isCalendarTaskVisible)
+      .sort((a, b) => CALENDAR_SOURCE_ORDER[a.source] - CALENDAR_SOURCE_ORDER[b.source]);
+    const byDate = new Map<string, CalendarTask[]>();
+    for (const item of items) byDate.set(item.date, [...(byDate.get(item.date) ?? []), item]);
+    return byDate;
+  }, [data.tasks, data.regularTasks, calendarDays, todayKey, isCalendarTaskVisible]);
+
+  // Встречи дня: по плановой дате, а проведённые — ещё и по фактической. Отменённые остаются
+  // в списке, но ячейку не закрашивают. У встреч нет ответственного, поэтому при выборе
+  // человека они скрываются.
+  const meetingsOnDay = useCallback((iso: string): MeetingOccurrence[] => {
+    if (!calendarSources.has("meeting") || calendarPerson) return [];
+    return data.meetings
+      .filter((meeting) => meeting.plannedDate === iso || (meeting.status === "completed" && meeting.actualDate === iso))
+      .map((meeting) => {
+        const isFact = meeting.status === "completed" && meeting.actualDate === iso;
+        return { meeting, isFact, isPlan: meeting.plannedDate === iso, time: isFact && meeting.actualTime ? meeting.actualTime : meeting.plannedTime };
+      })
+      .sort((a, b) => a.time.localeCompare(b.time));
+  }, [data.meetings, calendarSources, calendarPerson]);
+
+  const calendarCells = useMemo(() => calendarDays.map((date) => {
+    const iso = toISO(date);
+    const meetings = meetingsOnDay(iso).filter((item) => item.meeting.status !== "cancelled");
+    const tasks = calendarTasksByDate.get(iso) ?? [];
+    // Точки под числом: сначала просроченные, потом в плане, потом выполненные.
+    const order = { overdue: 0, plan: 1, done: 2 };
+    const buckets = tasks.map((item) => calendarBucket(item.status)).sort((a, b) => order[a] - order[b]);
+    return {
+      date,
+      iso,
+      hasPlan: meetings.some((item) => item.isPlan),
+      hasFact: meetings.some((item) => item.isFact),
+      meetingCount: meetings.length,
+      buckets,
+      overdueCount: buckets.filter((bucket) => bucket === "overdue").length,
+      inMonth: date.getMonth() === calendarMonth.getMonth(),
+    };
+  }), [calendarDays, meetingsOnDay, calendarTasksByDate, calendarMonth]);
+
+  // Правая колонка: выбранный день или весь месяц по датам. На сегодняшнем дне
+  // ниже идёт хвост — всё, что просрочено раньше.
+  const calendarAgenda = useMemo(() => {
+    if (selectedDate) {
+      const overdueTail = selectedDate === todayKey
+        ? collectCalendarTasks({ tasks: data.tasks, regularTasks: data.regularTasks }, addDays(todayKey, -OVERDUE_TAIL_DAYS), addDays(todayKey, -1), todayKey)
+          .filter((item) => item.status === "Просрочено" && isCalendarTaskVisible(item))
+          .sort((a, b) => a.date.localeCompare(b.date))
+        : [];
+      return { days: [{ iso: selectedDate, meetings: meetingsOnDay(selectedDate), tasks: calendarTasksByDate.get(selectedDate) ?? [] }], overdueTail };
+    }
+    const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0, 12).getDate();
+    const days = Array.from({ length: daysInMonth }, (_, index) => toISO(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), index + 1, 12)))
+      .map((iso) => ({ iso, meetings: meetingsOnDay(iso), tasks: calendarTasksByDate.get(iso) ?? [] }))
+      .filter((day) => day.meetings.length > 0 || day.tasks.length > 0);
+    return { days, overdueTail: [] as CalendarTask[] };
+  }, [selectedDate, todayKey, data.tasks, data.regularTasks, isCalendarTaskVisible, meetingsOnDay, calendarTasksByDate, calendarMonth]);
+
+  const calendarPeople = useMemo(() => mergePeople(data.people, [
+    ...data.tasks.flatMap((task) => [task.assignee, ...taskCheckpoints(task).map((item) => item.assignee ?? "")]),
+    ...data.regularTasks.map((task) => task.assignee),
+  ]), [data.people, data.tasks, data.regularTasks]);
 
   // Серии, в которых осталось больше одной встречи: только их помечаем в списке.
   const activeSeriesIds = useMemo(() => {
@@ -1164,24 +1240,6 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
     }
     return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([seriesId]) => seriesId));
   }, [data.meetings]);
-
-  const displayedMeetings = useMemo(() => {
-    const isInCalendarMonth = (value: string) => {
-      const date = parseDate(value);
-      return !Number.isNaN(date.getTime()) && date.getFullYear() === calendarMonth.getFullYear() && date.getMonth() === calendarMonth.getMonth();
-    };
-    const meetings = data.meetings.filter((meeting) => {
-      if (selectedDate) return meeting.plannedDate === selectedDate || (meeting.status === "completed" && meeting.actualDate === selectedDate);
-      return isInCalendarMonth(meeting.plannedDate) || (meeting.status === "completed" && isInCalendarMonth(meeting.actualDate));
-    });
-    return meetings.sort((a, b) => {
-      const firstFact = a.status === "completed" && (selectedDate ? a.actualDate === selectedDate : isInCalendarMonth(a.actualDate));
-      const secondFact = b.status === "completed" && (selectedDate ? b.actualDate === selectedDate : isInCalendarMonth(b.actualDate));
-      const firstKey = (selectedDate || (firstFact ? a.actualDate : a.plannedDate)) + (firstFact && a.actualTime ? a.actualTime : a.plannedTime);
-      const secondKey = (selectedDate || (secondFact ? b.actualDate : b.plannedDate)) + (secondFact && b.actualTime ? b.actualTime : b.plannedTime);
-      return firstKey.localeCompare(secondKey);
-    });
-  }, [data.meetings, selectedDate, calendarMonth]);
 
   const regularMonths = useMemo(() => Array.from({ length: 12 }, (_, index) => {
     const date = new Date(today.getFullYear(), today.getMonth() + index, 1, 12);
@@ -1397,6 +1455,125 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
     });
   }
 
+  function toggleCalendarSource(source: CalendarSource) {
+    setCalendarSources((current) => {
+      const next = new Set(current);
+      if (next.has(source)) next.delete(source); else next.add(source);
+      return next;
+    });
+  }
+
+  function openCalendarTask(item: CalendarTask) {
+    if (item.source === "regular") {
+      const task = data.regularTasks.find((entry) => entry.id === item.taskId);
+      if (task) setModal({ kind: "regular-period", task, monthStart: toISO(startOfMonth(parseDate(item.date))) });
+      return;
+    }
+    // Контрольная точка открывает карточку своей подзадачи — там весь чек-лист.
+    const task = data.tasks.find((entry) => entry.id === item.taskId);
+    if (task) setModal({ kind: "task", item: task, focusDate: item.source === "checkpoint" ? item.date : undefined });
+  }
+
+  function toggleCalendarCheckpoint(taskId: string, code: string) {
+    commit((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) => task.id !== taskId ? task : {
+        ...task,
+        groups: (task.groups ?? []).map((group) => ({ ...group, items: group.items.map((item) => item.code === code ? { ...item, done: !item.done } : item) })),
+      }),
+    }));
+  }
+
+  function renderAgendaSummary(meetingCount: number, tasks: CalendarTask[]) {
+    const overdue = tasks.filter((item) => item.status === "Просрочено").length;
+    const done = tasks.filter((item) => calendarBucket(item.status) === "done").length;
+    if (meetingCount === 0 && tasks.length === 0) return <span>Ничего не запланировано</span>;
+    return (
+      <>
+        {meetingCount > 0 && <span>{meetingCount} {pluralMeetings(meetingCount)}</span>}
+        {tasks.length > 0 && <span>{tasks.length} {pluralTasks(tasks.length)}</span>}
+        {overdue > 0 && <span className="agenda-warn">{pluralOverdue(overdue)}</span>}
+        {done > 0 && <span>{done} выполнено</span>}
+      </>
+    );
+  }
+
+  function renderMeetingOccurrence({ meeting, isPlan, isFact, time }: MeetingOccurrence) {
+    const statusLabel = meeting.status === "completed" ? "Проведена" : meeting.status === "cancelled" ? "Отменена" : "Запланирована";
+    const statusClass = meeting.status === "completed" ? "status status-success" : meeting.status === "cancelled" ? "status status-danger" : "status status-neutral";
+    return (
+      <button type="button" className="agenda-item" key={"meeting:" + meeting.id} onClick={() => setModal({ kind: "meeting", item: meeting })}>
+        <span className={"agenda-lead agenda-lead-time " + (isFact ? "meeting-fact" : "meeting-plan")}>{time || "—"}</span>
+        <span className="agenda-copy">
+          <small><b>Встреча</b>{isPlan && " · план"}{isFact && " · факт"}{isFact && !isPlan && meeting.plannedDate && " (план был " + formatShortDate(meeting.plannedDate) + ")"}</small>
+          <b>{meeting.title}</b>
+          {meeting.seriesId && activeSeriesIds.has(meeting.seriesId) && <span className="agenda-badges"><i className="occurrence-series"><Repeat2 size={9} />{meeting.seriesFrequency ? frequencyLabel(meeting.seriesFrequency) : "Серия"}</i></span>}
+        </span>
+        <span className="agenda-right"><em className={statusClass}>{statusLabel}</em>{meeting.comments.length > 0 && <span className="comment-count"><MessageSquareText size={12} />{meeting.comments.length}</span>}</span>
+      </button>
+    );
+  }
+
+  function renderCalendarTask(item: CalendarTask, showDate = false) {
+    const datePrefix = showDate && <><b>{formatShortDate(item.date)}</b> · </>;
+    const meta = item.source === "checkpoint"
+      ? <><b>{item.code}</b> · {item.context}</>
+      : item.source === "gantt"
+        ? <><b>Срок</b>{item.context && " · " + item.context}</>
+        : <><b>{item.frequency ? frequencyLabel(item.frequency) : "Регулярная задача"}</b>{item.actualDate && item.actualDate !== item.date && " · выполнено " + formatShortDate(item.actualDate)}</>;
+    const titleClass = item.source === "checkpoint" ? [item.gate ? "is-gate" : "", item.done ? "is-done" : ""].filter(Boolean).join(" ") : "";
+    // Строка — не кнопка: внутри у контрольной точки своя кнопка-галочка.
+    return (
+      <div role="button" tabIndex={0} className="agenda-item" key={item.key} onClick={() => openCalendarTask(item)} onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          openCalendarTask(item);
+        }
+      }}>
+        {item.source === "checkpoint"
+          ? <button type="button" className={"agenda-check" + (item.done ? " is-done" : "") + (item.status === "Просрочено" ? " is-late" : "")} aria-pressed={item.done} aria-label={(item.done ? "Снять отметку с точки " : "Отметить выполненной точку ") + item.code} onClick={(event) => { event.stopPropagation(); toggleCalendarCheckpoint(item.taskId, item.code ?? ""); }}><Check size={11} strokeWidth={3.2} /></button>
+          : <span className={"agenda-lead " + (item.source === "gantt" ? "agenda-lead-gantt" : "agenda-lead-regular")}>{item.source === "gantt" ? <ChartGantt size={15} /> : <Repeat2 size={15} />}</span>}
+        <span className="agenda-copy">
+          <small>{datePrefix}{meta}</small>
+          <b className={titleClass || undefined}>{item.title}</b>
+          {item.assignee ? <span className="agenda-who"><i>{personInitials(item.assignee)}</i>{item.assignee}</span> : <span className="agenda-who is-empty">Ответственный не назначен</span>}
+        </span>
+        <span className="agenda-right"><em className={calendarStatusClass(item.status)}>{item.status}</em></span>
+      </div>
+    );
+  }
+
+  function renderAgendaBody() {
+    if (selectedDate) {
+      const day = calendarAgenda.days[0];
+      const groups = [
+        { key: "meetings", title: "Встречи", rows: day.meetings.map(renderMeetingOccurrence) },
+        { key: "gantt", title: "Дорожная карта", rows: day.tasks.filter((item) => item.source === "gantt").map((item) => renderCalendarTask(item)) },
+        { key: "regular", title: "Регулярные задачи", rows: day.tasks.filter((item) => item.source === "regular").map((item) => renderCalendarTask(item)) },
+        { key: "checkpoint", title: "Контрольные точки", rows: day.tasks.filter((item) => item.source === "checkpoint").map((item) => renderCalendarTask(item)) },
+      ].filter((group) => group.rows.length > 0);
+      if (groups.length === 0 && calendarAgenda.overdueTail.length === 0) {
+        return <div className="empty-agenda"><CalendarDays size={22} /><b>На эту дату ничего нет</b><span>Нажмите на выбранный день ещё раз, чтобы увидеть весь месяц.</span></div>;
+      }
+      return (
+        <>
+          {groups.map((group) => <div key={group.key}><div className="agenda-group">{group.title}<small>{group.rows.length}</small></div>{group.rows}</div>)}
+          {calendarAgenda.overdueTail.length > 0 && <div><div className="agenda-group agenda-overdue">Просрочено ранее<small>{calendarAgenda.overdueTail.length}</small></div>{calendarAgenda.overdueTail.map((item) => renderCalendarTask(item, true))}</div>}
+        </>
+      );
+    }
+    if (calendarAgenda.days.length === 0) {
+      return <div className="empty-agenda"><CalendarDays size={22} /><b>В этом месяце ничего не запланировано</b><span>Выберите другой месяц или запланируйте встречу.</span></div>;
+    }
+    return calendarAgenda.days.map((day) => (
+      <div key={day.iso}>
+        <div className={"agenda-date" + (day.iso === todayKey ? " is-today" : "")}>{formatAgendaDate(day.iso)}{day.iso === todayKey && <small>сегодня</small>}</div>
+        {day.meetings.map(renderMeetingOccurrence)}
+        {day.tasks.map((item) => renderCalendarTask(item))}
+      </div>
+    ));
+  }
+
   function moveCalendarMonth(offset: number) {
     setPickedCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + offset, 1, 12));
     setSelectedDate(null);
@@ -1413,6 +1590,8 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
   const todayPercent = (Math.round((today.getTime() - ganttRange.start.getTime()) / 86400000) / ganttRange.totalDays) * 100;
   const ganttTimelineWidth = Math.max(760, ganttRange.months.length * 300);
+  // Середина дня на шкале — туда ставится ромбик контрольной точки.
+  const ganttDayCenter = (date: string) => (Math.round((parseDate(date).getTime() - ganttRange.start.getTime()) / 86400000) + 0.5) / ganttRange.totalDays * 100;
   const weekLineCount = Math.ceil(ganttRange.totalDays / 7) + 1;
   const calendarDefaultDate = selectedDate || toISO(new Date(
     calendarMonth.getFullYear(),
@@ -1614,10 +1793,22 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
                       + (shift.days === 0 ? "" : ", дедлайн " + (shift.days > 0 ? "+" : "−") + Math.abs(shift.days) + " " + pluralDays(Math.abs(shift.days)))
                     : undefined;
                   const progress = checkpointProgress(task, data.tasks);
+                  // Ромбики точек ставятся только на подзадачах. Ромбик дедлайна на конце полосы
+                  // тогда убирается: при масштабе ~10 px на день он наезжает на точку пятницы.
+                  const marks = task.parentId ? checkpointMarks(task, todayKey) : [];
                   return (
                     <div className="gantt-row" key={task.id} style={{ height: taskRowHeights[task.id] ?? 46 }}>
-                      <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task, today) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)} title={task.title + " · " + formatShortDate(task.startDate) + " — " + formatShortDate(task.endDate) + (progress && progress.total > 0 ? " · точки " + progress.done + "/" + progress.total : "")}><span>{task.title}</span><i /></button>
+                      <button aria-label={"Редактировать " + task.title} onClick={() => setModal({ kind: "task", item: task })} className={"gantt-bar gantt-" + (isTaskOverdue(task, today) ? "overdue" : task.status === "Завершено" ? "done" : task.status === "Не начато" ? "planned" : "active") + (task.parentId ? "" : " gantt-parent")} style={ganttBarStyle(task.startDate, task.endDate)} title={task.title + " · " + formatShortDate(task.startDate) + " — " + formatShortDate(task.endDate) + (progress && progress.total > 0 ? " · точки " + progress.done + "/" + progress.total : "")}><span>{task.title}</span>{marks.length === 0 && <i />}</button>
                       {shift?.segments.map((segment) => <i key={segment.id} className={"gantt-delta" + (segment.inside ? "" : " gantt-delta-outside") + (task.parentId ? "" : " gantt-delta-parent")} style={ganttBarStyle(segment.from, segment.to)} title={shiftTitle} />)}
+                      {marks.map((mark) => (
+                        <button type="button" key={mark.date} className="cp-hit" style={{ left: ganttDayCenter(mark.date) + "%" }} aria-label={"Контрольные точки на " + formatCheckpointDate(mark.date)}
+                          onClick={() => { setCheckpointTip(null); setModal({ kind: "task", item: task, focusDate: mark.date }); }}
+                          onMouseEnter={(event) => setCheckpointTip({ task, mark, rect: event.currentTarget.getBoundingClientRect() })}
+                          onFocus={(event) => setCheckpointTip({ task, mark, rect: event.currentTarget.getBoundingClientRect() })}
+                          onMouseLeave={() => setCheckpointTip(null)} onBlur={() => setCheckpointTip(null)}>
+                          <i className={"cp-mark cp-mark-" + mark.state} />
+                        </button>
+                      ))}
                     </div>
                   );
                 })}
@@ -1626,6 +1817,15 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
           </div>
         </div>
       </section>
+      {checkpointTip && (
+        <div className="cp-tip" role="tooltip" style={{ left: Math.min(Math.max(checkpointTip.rect.left + checkpointTip.rect.width / 2, 158), window.innerWidth - 158), top: checkpointTip.rect.bottom + 6 }}>
+          <h5>{formatCheckpointDate(checkpointTip.mark.date)}{checkpointTip.task.template?.subCode ? " · " + checkpointTip.task.template.subCode : ""}</h5>
+          {checkpointTip.mark.items.map((item) => {
+            const state = checkpointState(item, todayKey);
+            return <p key={item.code}><i className={state} /><span>{item.title}<br /><small>{item.assignee ? item.assignee + " · " : ""}{state === "done" ? "сделано" : state === "overdue" ? "просрочено" : state === "today" ? "сегодня" : "запланировано"}</small></span></p>;
+          })}
+        </div>
+      )}
 
       <div className="lower-grid">
         <section className="card decisions-card">
@@ -1652,7 +1852,15 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
         </section>
 
         <section className="card meetings-card">
-          <div className="compact-head"><h2>Календарь встреч</h2><button className="primary" onClick={() => setModal({ kind: "meeting", item: null })}><Plus size={17} />Запланировать</button></div>
+          <div className="compact-head"><h2>Календарь встреч и задач</h2><button className="primary" onClick={() => setModal({ kind: "meeting", item: null })}><Plus size={17} />Запланировать</button></div>
+          <div className="calendar-filters">
+            <div className="calendar-chips">
+              {CALENDAR_SOURCES.map((source) => (
+                <button type="button" className="calendar-chip" key={source.key} aria-pressed={calendarSources.has(source.key)} onClick={() => toggleCalendarSource(source.key)}><i><Check size={9} strokeWidth={4} /></i>{source.label}</button>
+              ))}
+            </div>
+            <label className="calendar-person"><select value={calendarPerson} onChange={(event) => setCalendarPerson(event.target.value)} aria-label="Ответственный"><option value="">Все ответственные</option>{calendarPeople.map((person) => <option value={person} key={person}>{person}</option>)}</select><ChevronDown size={13} /></label>
+          </div>
           <div className="calendar-layout">
             <div className="calendar">
               <div className="calendar-nav"><button onClick={() => moveCalendarMonth(-1)} aria-label="Предыдущий месяц"><ChevronLeft size={18} /></button><strong>{MONTHS[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}</strong><button onClick={() => moveCalendarMonth(1)} aria-label="Следующий месяц"><ChevronRight size={18} /></button></div>
@@ -1660,32 +1868,31 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               <div className="calendar-grid">
                 {calendarCells.map((cell) => {
                   const fillClass = cell.hasPlan && cell.hasFact ? "day-plan-fact" : cell.hasFact ? "day-fact" : cell.hasPlan ? "day-plan" : "";
-                  return <button key={cell.iso} className={"calendar-day " + fillClass + (cell.inMonth ? "" : " outside") + (selectedDate === cell.iso ? " selected" : "")} onClick={() => {
+                  const tip = [
+                    cell.meetingCount > 0 ? cell.meetingCount + " " + pluralMeetings(cell.meetingCount) : "",
+                    cell.buckets.length > 0 ? cell.buckets.length + " " + pluralTasks(cell.buckets.length) + (cell.overdueCount > 0 ? ", " + pluralOverdue(cell.overdueCount) : "") : "",
+                  ].filter(Boolean).join(" · ") || "Ничего не запланировано";
+                  return <button key={cell.iso} className={"calendar-day " + fillClass + (cell.inMonth ? "" : " outside") + (selectedDate === cell.iso ? " selected" : "") + (cell.iso === todayKey ? " is-today" : "")} onClick={() => {
                     setSelectedDate((current) => current === cell.iso ? null : cell.iso);
                     if (!cell.inMonth) setPickedCalendarMonth(startOfMonth(cell.date));
-                  }} aria-pressed={selectedDate === cell.iso} aria-label={cell.count ? cell.count + " встреч на " + formatShortDate(cell.iso) : "Нет встреч на " + formatShortDate(cell.iso)}><span>{cell.date.getDate()}</span>{cell.count > 1 && <em>{cell.count}</em>}</button>;
+                  }} aria-pressed={selectedDate === cell.iso} title={tip} aria-label={formatShortDate(cell.iso) + ": " + tip}>
+                    <span>{cell.date.getDate()}</span>
+                    <span className="day-dots" aria-hidden="true">{cell.buckets.slice(0, 3).map((bucket, index) => <i className={"dot-" + bucket} key={index} />)}{cell.buckets.length > 3 && <b>+</b>}</span>
+                    {cell.meetingCount > 1 && <em>{cell.meetingCount}</em>}
+                  </button>;
                 })}
               </div>
-              <div className="calendar-legend"><span><i className="legend-plan" />План</span><span><i className="legend-fact" />Факт</span><span><i className="legend-both" />План + факт</span></div>
+              <div className="calendar-legend">
+                <div><b>Встречи</b><span><i className="legend-square legend-plan" />План</span><span><i className="legend-square legend-fact" />Факт</span></div>
+                <div><b>Задачи</b><span><i className="legend-dot dot-plan" />В плане</span><span><i className="legend-dot dot-done" />Выполнено</span><span><i className="legend-dot dot-overdue" />Просрочено</span></div>
+              </div>
             </div>
-            <div className="meeting-list">
-              <div className="meeting-list-head"><span>{selectedDate ? "Встречи на выбранную дату" : "Все встречи месяца"}</span><small>{selectedDate ? formatShortDate(selectedDate) : MONTHS[calendarMonth.getMonth()] + " " + calendarMonth.getFullYear()}</small></div>
-              {displayedMeetings.map((meeting) => {
-                const isPlanOccurrence = selectedDate ? meeting.plannedDate === selectedDate : parseDate(meeting.plannedDate).getFullYear() === calendarMonth.getFullYear() && parseDate(meeting.plannedDate).getMonth() === calendarMonth.getMonth();
-                const isFactOccurrence = meeting.status === "completed" && (selectedDate ? meeting.actualDate === selectedDate : parseDate(meeting.actualDate).getFullYear() === calendarMonth.getFullYear() && parseDate(meeting.actualDate).getMonth() === calendarMonth.getMonth());
-                const occurrenceTime = isFactOccurrence && meeting.actualTime ? meeting.actualTime : meeting.plannedTime;
-                const occurrenceDate = selectedDate || (isFactOccurrence ? meeting.actualDate : meeting.plannedDate);
-                const statusLabel = meeting.status === "completed" ? "Проведена" : meeting.status === "cancelled" ? "Отменена" : "Запланирована";
-                return (
-                <button className="meeting-item" key={meeting.id} onClick={() => setModal({ kind: "meeting", item: meeting })}>
-                  <time className={isFactOccurrence ? "meeting-fact" : "meeting-plan"}><b>{parseDate(occurrenceDate).getDate()}</b><span>{MONTHS_GENITIVE[parseDate(occurrenceDate).getMonth()].slice(0, 3)}</span></time>
-                  <span className="meeting-copy"><small>{occurrenceTime}</small><b>{meeting.title}</b><span className="occurrence-badges">{isPlanOccurrence && <i className="occurrence-plan">План</i>}{isFactOccurrence && <i className="occurrence-fact">Факт</i>}{meeting.seriesId && activeSeriesIds.has(meeting.seriesId) && <i className="occurrence-series"><Repeat2 size={9} />{meeting.seriesFrequency ? frequencyLabel(meeting.seriesFrequency) : "Серия"}</i>}<em>{statusLabel}</em></span></span>
-                  {meeting.comments.length > 0 && <span className="comment-count"><MessageSquareText size={13} />{meeting.comments.length}</span>}
-                  <MoreHorizontal size={15} />
-                </button>
-                );
-              })}
-              {displayedMeetings.length === 0 && <div className="empty-meetings"><CalendarDays size={22} /><b>{selectedDate ? "На эту дату встреч нет" : "В этом месяце встреч нет"}</b><span>{selectedDate ? "Нажмите на выбранный день ещё раз, чтобы увидеть все встречи месяца." : "Выберите другой месяц или запланируйте новую встречу."}</span></div>}
+            <div className="agenda">
+              <div className="agenda-head">
+                <strong>{selectedDate ? formatWeekdayDate(selectedDate) + (selectedDate === todayKey ? " · сегодня" : "") : "Весь месяц · " + MONTHS[calendarMonth.getMonth()].toLowerCase() + " " + calendarMonth.getFullYear()}</strong>
+                <div className="agenda-summary">{renderAgendaSummary(calendarAgenda.days.reduce((sum, day) => sum + day.meetings.length, 0), calendarAgenda.days.flatMap((day) => day.tasks))}</div>
+              </div>
+              <div className="agenda-body">{renderAgendaBody()}</div>
             </div>
           </div>
         </section>
@@ -1745,7 +1952,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
       </section>
       </> : <AccountingPolicy reports={data.reports} people={data.people} onChange={(reports) => commit((current) => ({ ...current, reports }))} />}
 
-      {modal?.kind === "task" && <TaskDialog key={modal.item?.id ?? "new"} item={modal.item} tasks={data.tasks} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} onOpenTask={(task) => setModal({ kind: "task", item: task })} />}
+      {modal?.kind === "task" && <TaskDialog key={modal.item?.id ?? "new"} item={modal.item} tasks={data.tasks} people={data.people} today={todayKey} focusDate={modal.focusDate} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} onOpenTask={(task) => setModal({ kind: "task", item: task })} />}
       {modal?.kind === "template" && <TemplateDialog templates={templates} tasks={data.tasks} people={data.people} today={todayKey} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onAdd={addTemplateTasks} />}
       {modal?.kind === "idea" && <IdeaDialog item={modal.item} people={data.people} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveIdea} onDelete={deleteIdea} />}
       {modal?.kind === "meeting" && <MeetingDialog item={modal.item} defaultDate={calendarDefaultDate} people={data.people} seriesCount={modal.item ? getSeriesOccurrences(data.meetings, modal.item).length : 1} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveMeeting} onDelete={deleteMeeting} />}
