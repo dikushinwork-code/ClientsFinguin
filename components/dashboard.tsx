@@ -168,11 +168,7 @@ function pluralSprints(count: number) {
   return plural(count, "спринт", "спринта", "спринтов");
 }
 
-function pluralSubtasks(count: number) {
-  return plural(count, "подзадача", "подзадачи", "подзадач");
-}
-
-// Спринты типовой задачи — только подзадачи с кодом спринта, по порядку недель.
+// Спринты типовой задачи — только спринты с кодом из шаблона, по порядку недель.
 function templateSprints(tasks: Task[], parentId: string | null) {
   return tasks
     .filter((task) => task.parentId === parentId && task.template?.subCode)
@@ -494,7 +490,7 @@ function TaskDialog({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft.title.trim()) return setError("Укажите название задачи.");
-    if (taskType === "subtask" && !draft.parentId) return setError("Выберите надзадачу для этой подзадачи.");
+    if (taskType === "subtask" && !draft.parentId) return setError("Выберите надзадачу для этого спринта.");
     if (!draft.startDate || !draft.endDate || parseDate(draft.startDate) > parseDate(draft.endDate)) {
       return setError("Проверьте даты начала и окончания.");
     }
@@ -506,14 +502,14 @@ function TaskDialog({
     <ModalShell title={dialogTitle} subtitle={dialogSubtitle} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="modal-body">
-          <label className="field field-wide">{isTemplateSprint ? "Название подзадачи" : "Название задачи"}<input autoFocus={!item?.template} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Например, Подготовить форму ДДС" /></label>
+          <label className="field field-wide">{isTemplateSprint ? "Название спринта" : "Название задачи"}<input autoFocus={!item?.template} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Например, Подготовить форму ДДС" /></label>
           {!item?.template && <label className="field field-wide">Метки<input value={labelsText} onChange={(event) => setLabelsText(event.target.value)} placeholder="Например, ДДС, Отчётность" aria-describedby="task-labels-hint" /><span className="field-note" id="task-labels-hint">Несколько меток разделяйте запятой. Чтобы убрать метку, удалите её из поля.</span></label>}
           <div className="form-grid">
             {!item?.template && <label className="field">Тип задачи<select value={taskType} onChange={(event) => {
               const value = event.target.value as "parent" | "subtask";
               setTaskType(value);
               if (value === "parent") setDraft({ ...draft, parentId: null });
-            }}><option value="subtask" disabled={parents.length === 0 || hasChildren}>Подзадача</option><option value="parent">Надзадача</option></select><ChevronDown size={15} /></label>}
+            }}><option value="subtask" disabled={parents.length === 0 || hasChildren}>Спринт</option><option value="parent">Надзадача</option></select><ChevronDown size={15} /></label>}
             <div className="field"><span>Ответственный</span><PersonSelect value={draft.assignee} onChange={(assignee) => setDraft({ ...draft, assignee })} people={people} onAddPerson={onAddPerson} onDeletePerson={onDeletePerson} /></div>
             {!item?.template && taskType === "subtask" && <label className="field field-wide">К какой надзадаче прикрепить<select value={draft.parentId || ""} onChange={(event) => setDraft({ ...draft, parentId: event.target.value || null })}><option value="">Выберите надзадачу</option>{parents.map((task) => <option value={task.id} key={task.id}>{task.title}</option>)}</select><ChevronDown size={15} /></label>}
             {item?.template && <label className="field">Статус<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={15} /></label>}
@@ -525,13 +521,13 @@ function TaskDialog({
             <>
               <CheckpointsEditor groups={draft.groups ?? []} nextCode={() => nextCheckpointCode(draft)} onChange={(groups) => setDraft({ ...draft, groups })} startDate={draft.startDate} endDate={draft.endDate} today={today} defaultAssignee={draft.assignee} people={people} onAddPerson={onAddPerson} highlightDate={focusDate} />
               {checklistAllDone && draft.status !== "Завершено" && (
-                <div className="all-done">✓ Все контрольные точки отмечены — {isTemplateSprint ? "спринт" : "задачу"} можно закрывать.<button type="button" onClick={() => setDraft({ ...draft, status: "Завершено" })}>Отметить завершённым</button></div>
+                <div className="all-done">✓ Все контрольные точки отмечены — {taskType === "subtask" ? "спринт" : "задачу"} можно закрывать.<button type="button" onClick={() => setDraft({ ...draft, status: "Завершено" })}>Отметить завершённым</button></div>
               )}
             </>
           )}
           {isTemplateParent && (
             <>
-              <div className="check-head sprint-head"><strong>Спринты</strong><span className="check-count">Сроки подзадач меняются в их карточках</span></div>
+              <div className="check-head sprint-head"><strong>Спринты</strong><span className="check-count">Сроки спринтов меняются в их карточках</span></div>
               <div className="sprint-list">
                 {sprints.map((sprint) => {
                   const progress = checkpointProgress(sprint, tasks) ?? { done: 0, total: 0 };
@@ -1118,7 +1114,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
   const ganttRange = useMemo(() => {
     const baselineDatesInPlay = baseline ? Object.values(baseline).flatMap((base) => [parseDate(base.startDate), parseDate(base.endDate)]) : [];
-    // Срок точки может выходить за неделю подзадачи — шкала растягивается и под него.
+    // Срок точки может выходить за неделю спринта — шкала растягивается и под него.
     const checkpointDates = data.tasks.filter((task) => task.parentId).flatMap((task) => taskCheckpoints(task).map(checkpointDate).filter(Boolean).map(parseDate));
     const dates = [today, ...data.tasks.flatMap((task) => [parseDate(task.startDate), parseDate(task.endDate)]), ...checkpointDates, ...baselineDatesInPlay].filter((date) => !Number.isNaN(date.getTime()));
     const minDate = dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : today;
@@ -1268,7 +1264,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   }
 
   function deleteTask(id: string) {
-    if (!window.confirm("Удалить задачу и её подзадачи?")) return;
+    if (!window.confirm("Удалить задачу и её спринты?")) return;
     commit((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== id && task.parentId !== id) }));
     setModal(null);
   }
@@ -1293,7 +1289,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
     if (freshTimer.current) clearTimeout(freshTimer.current);
     freshTimer.current = setTimeout(() => setFreshTaskIds(new Set()), 3500);
 
-    showToast("Добавлено: " + (parent.template?.code ?? "") + " · " + childCount + " " + pluralSubtasks(childCount) + ", " + formatDayMonth(parent.startDate) + " — " + formatDayMonth(parent.endDate));
+    showToast("Добавлено: " + (parent.template?.code ?? "") + " · " + childCount + " " + pluralSprints(childCount) + ", " + formatDayMonth(parent.startDate) + " — " + formatDayMonth(parent.endDate));
   }
 
   function saveIdea(idea: Idea) {
@@ -1469,7 +1465,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
       if (task) setModal({ kind: "regular-period", task, monthStart: toISO(startOfMonth(parseDate(item.date))) });
       return;
     }
-    // Контрольная точка открывает карточку своей подзадачи — там весь чек-лист.
+    // Контрольная точка открывает карточку своего спринта — там весь чек-лист.
     const task = data.tasks.find((entry) => entry.id === item.taskId);
     if (task) setModal({ kind: "task", item: task, focusDate: item.source === "checkpoint" ? item.date : undefined });
   }
@@ -1758,14 +1754,14 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
                   if (event.key === "Enter" || event.key === " ") setModal({ kind: "task", item: task });
                 }}>
                   <span className="task-title-cell">
-                    {!task.parentId && childCount > 0 && <button type="button" className="task-toggle" aria-label={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"} aria-expanded={!isCollapsed} onClick={(event) => { event.stopPropagation(); toggleParent(task.id); }}>{isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>}
+                    {!task.parentId && childCount > 0 && <button type="button" className="task-toggle" aria-label={isCollapsed ? "Развернуть спринты" : "Свернуть спринты"} aria-expanded={!isCollapsed} onClick={(event) => { event.stopPropagation(); toggleParent(task.id); }}>{isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>}
                     {!task.parentId && childCount === 0 && <span className="toggle-spacer" />}
                     {task.parentId && <i />}
                     <span className="task-title-content">
                       {(task.template || Boolean(task.labels?.length) || childCount > 0 || (progress && progress.total > 0) || task.comments.length > 0) && <span className="task-title-meta">
                         {task.template && <span className={"code-chip" + (task.parentId ? "" : " code-chip-parent")}>{task.template.subCode || task.template.code}</span>}
                         {task.labels?.map((label) => <span className={"code-chip task-label" + (task.parentId ? "" : " code-chip-parent")} key={label}>{label}</span>)}
-                        {!task.parentId && childCount > 0 && <small className="child-count" title={childCount + " " + pluralSubtasks(childCount)}>{childCount}</small>}
+                        {!task.parentId && childCount > 0 && <small className="child-count" title={childCount + " " + pluralSprints(childCount)}>{childCount}</small>}
                         {progress && progress.total > 0 && <small className={"progress-chip" + (progress.done === progress.total ? " progress-done" : "")} title={"Контрольные точки: " + progress.done + " из " + progress.total}><ProgressRing done={progress.done} total={progress.total} />{progress.done}/{progress.total}</small>}
                         {task.comments.length > 0 && <small><MessageSquareText size={12} />{task.comments.length}</small>}
                       </span>}
@@ -1793,7 +1789,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
                       + (shift.days === 0 ? "" : ", дедлайн " + (shift.days > 0 ? "+" : "−") + Math.abs(shift.days) + " " + pluralDays(Math.abs(shift.days)))
                     : undefined;
                   const progress = checkpointProgress(task, data.tasks);
-                  // Ромбики точек ставятся только на подзадачах. Ромбик дедлайна на конце полосы
+                  // Ромбики точек ставятся только на спринтах. Ромбик дедлайна на конце полосы
                   // тогда убирается: при масштабе ~10 px на день он наезжает на точку пятницы.
                   const marks = task.parentId ? checkpointMarks(task, todayKey) : [];
                   return (

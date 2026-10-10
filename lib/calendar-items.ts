@@ -13,9 +13,9 @@ export interface CalendarTask {
   title: string;
   assignee: string;
   status: string;
-  // Задача Ганта или подзадача, к которой относится контрольная точка; регулярная задача.
+  // Задача Ганта или спринт, к которому относится контрольная точка; регулярная задача.
   taskId: string;
-  // Надзадача — для задачи Ганта; подзадача — для контрольной точки.
+  // Надзадача — для задачи Ганта; спринт — для контрольной точки.
   context: string;
   frequency?: RegularFrequency;
   actualDate?: string;
@@ -59,7 +59,7 @@ export function collectCalendarTasks(
 
   for (const task of data.tasks) {
     const parent = task.parentId ? data.tasks.find((item) => item.id === task.parentId) : undefined;
-    // Срок надзадачи обычно совпадает со сроком последней подзадачи — второй раз его не ставим.
+    // Срок надзадачи обычно совпадает со сроком последнего спринта — второй раз его не ставим.
     const children = data.tasks.filter((item) => item.parentId === task.id);
     const repeatsChild = children.some((child) => child.endDate === task.endDate);
     if (inRange(task.endDate) && !repeatsChild) {

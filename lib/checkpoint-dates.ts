@@ -23,7 +23,7 @@ export function checkpointState(item: Checkpoint, today: string): CheckpointStat
   return date < today ? "overdue" : date === today ? "today" : "planned";
 }
 
-// Ромбики на полосе подзадачи: один на день. Цвет — самое тревожное состояние из точек дня.
+// Ромбики на полосе спринта: один на день. Цвет — самое тревожное состояние из точек дня.
 export function checkpointMarks(task: Task, today: string): CheckpointMark[] {
   const byDate = new Map<string, Checkpoint[]>();
   for (const item of taskCheckpoints(task)) {

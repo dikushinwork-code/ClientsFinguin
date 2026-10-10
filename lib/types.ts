@@ -67,11 +67,11 @@ export interface Task {
   startDate: string;
   endDate: string;
   comments: string[];
-  // Пользовательские метки обычных задач и подзадач.
+  // Пользовательские метки обычных задач и спринтов.
   labels?: string[];
   // Ссылка на шаблон заполнена только у типовых задач.
   template?: TaskTemplateRef;
-  // Чек-лист доступен у обычных и типовых подзадач.
+  // Чек-лист доступен у обычных и типовых спринтов.
   groups?: CheckpointGroup[];
 }
 
@@ -91,7 +91,7 @@ export interface Checkpoint {
   note: string;        // текст пояснения
   done: boolean;
   date?: string;       // срок «ГГГГ-ММ-ДД»; без него точка не выводится на диаграмму Ганта
-  assignee?: string;   // ответственный за точку; пусто — отвечает ответственный подзадачи
+  assignee?: string;   // ответственный за точку; пусто — отвечает ответственный спринта
 }
 
 export interface CheckpointGroup {
@@ -102,8 +102,8 @@ export interface CheckpointGroup {
 
 export interface TaskTemplateRef {
   code: string;        // код шаблона, «ДДС»
-  subCode?: string;    // код спринта, «ДДС-1» — только у подзадач
-  week?: number;       // номер спринта — только у подзадач
+  subCode?: string;    // код спринта, «ДДС-1» — только у спринтов
+  week?: number;       // номер спринта — только у спринтов
 }
 
 // Срез сроков дорожной карты: дата снимка (ISO) → id задачи → её сроки на тот момент.

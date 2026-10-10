@@ -42,12 +42,12 @@ describe("задачи в календаре", () => {
     expect(gantt.context).toBe("Внедрение ДДС · спринт ДДС-2");
   });
 
-  it("не дублирует срок надзадачи, если он совпадает со сроком подзадачи", () => {
+  it("не дублирует срок надзадачи, если он совпадает со сроком спринта", () => {
     const keys = collect([parent, lastSprint]).map((item) => item.key);
     expect(keys).toEqual(["gantt:last"]);
   });
 
-  it("берёт срок и ответственного контрольной точки, а без них — подзадачи", () => {
+  it("берёт срок и ответственного контрольной точки, а без них — спринта", () => {
     const points = collect([sprint]).filter((item) => item.source === "checkpoint");
     expect(points.map((item) => [item.code, item.date, item.assignee, item.status])).toEqual([
       ["ДДС-2.1", "2026-10-08", "Бухгалтерия", "Выполнено"],

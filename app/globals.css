@@ -824,7 +824,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .gantt-planned { color: #78a9e9; background: #78a9e9; }
 .gantt-overdue { color: var(--red); background: var(--red); }
 
-/* Ромбики контрольных точек на полосе подзадачи и подсказка к ним */
+/* Ромбики контрольных точек на полосе спринта и подсказка к ним */
 .cp-hit { position: absolute; z-index: 4; top: 50%; width: 10px; height: 24px; margin: 0; padding: 0; border: 0; display: grid; place-items: center; background: transparent; transform: translate(-50%, -50%); }
 .cp-mark { display: block; width: 8px; height: 8px; border: 1.5px solid #fff; background: #fff; transform: rotate(45deg); box-shadow: 0 0 0 1px rgba(13, 74, 156, .55); transition: transform .12s ease; }
 .cp-hit:hover .cp-mark, .cp-hit:focus-visible .cp-mark { transform: rotate(45deg) scale(1.45); }
