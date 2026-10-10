@@ -9,7 +9,6 @@ import {
   ChevronRight,
   CircleAlert,
   ClipboardCheck,
-  Clock3,
   History,
   Lightbulb,
   LoaderCircle,
@@ -30,7 +29,8 @@ import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
 import { ShiftHistory, ShiftReasonFields } from "@/components/shift-reason";
 import TemplateDialog from "@/components/template-dialog";
-import { addDays, differenceInDays, formatDayMonth, parseDate, toISO } from "@/lib/dates";
+import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, parseDate, toISO } from "@/lib/dates";
+import { monthClosing, sprintHealth } from "@/lib/roadmap-pulse";
 import { plural } from "@/lib/plural";
 import { appendShift, needsShiftReason, validateShift } from "@/lib/task-shifts";
 import {
@@ -1106,9 +1106,6 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
   const shiftedCount = useMemo(() => (baseline ? data.tasks.filter((task) => baselineShiftOf(task)).length : 0), [baseline, data.tasks, baselineShiftOf]);
 
-  const openTasks = data.tasks.filter((task) => task.status !== "Завершено");
-  const overdueCount = openTasks.filter((task) => isTaskOverdue(task, today)).length;
-  const nearestTask = [...openTasks].filter((task) => parseDate(task.endDate) >= today).sort((a, b) => parseDate(a.endDate).getTime() - parseDate(b.endDate).getTime())[0];
   const nextMeeting = [...data.meetings].filter((meeting) => meeting.status === "planned" && parseDate(meeting.plannedDate) >= today).sort((a, b) => (a.plannedDate + a.plannedTime).localeCompare(b.plannedDate + b.plannedTime))[0];
 
   const planningCoverage = useMemo(() => {
@@ -1121,11 +1118,19 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
   }, [data.tasks, today]);
   const missingPlanMonths = planningCoverage.filter((month) => !month.hasPlan);
   const hasTwoMonthPlan = missingPlanMonths.length === 0;
-  const planningMessage = hasTwoMonthPlan
-    ? "План работ сформирован на текущий и следующий месяц"
-    : missingPlanMonths.length === 2
-      ? "Нет плана работ на текущий и следующий месяц"
-      : "Нет плана работ на " + MONTHS_GENITIVE[missingPlanMonths[0].monthStart.getMonth()];
+  const health = useMemo(() => sprintHealth(data.tasks, todayKey), [data.tasks, todayKey]);
+  const closing = useMemo(() => monthClosing(data.regularTasks, todayKey), [data.regularTasks, todayKey]);
+  // «Выполнено 2 из 3 · просрочено: Закрыть ОПиУ (срок 5 окт) — нет зарплатной ведомости»
+  const closingNote = closing.state === "none"
+    ? "Добавьте регулярную задачу закрытия месяца"
+    : closing.state === "ok"
+      ? "Выполнено " + closing.total + " из " + closing.total
+      : "Выполнено " + closing.done + " из " + closing.total + " · " + (closing.state === "late"
+        ? "просрочено: " + closing.late.map((item) => item.title + " (срок " + formatDayShortMonth(item.plannedDate) + ") — " + (item.note ? item.note[0].toLowerCase() + item.note.slice(1) : "причина не указана")).join("; ")
+        : "следующий срок " + formatDayShortMonth(closing.nextDate));
+  const roadmapRef = useRef<HTMLElement | null>(null);
+  const meetingsRef = useRef<HTMLElement | null>(null);
+  const regularRef = useRef<HTMLElement | null>(null);
 
   const ganttRange = useMemo(() => {
     const baselineDatesInPlay = baseline ? Object.values(baseline).flatMap((base) => [parseDate(base.startDate), parseDate(base.endDate)]) : [];
@@ -1702,21 +1707,34 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
 
       {activePage === "roadmap" ? <>
 
-      <section className={"planning-banner " + (hasTwoMonthPlan ? "planning-ready" : "planning-missing")} aria-live="polite">
-        <span className="planning-icon">{hasTwoMonthPlan ? <Check size={18} /> : <CircleAlert size={18} />}</span>
-        <div className="planning-copy"><small>Планирование на 2 месяца</small><strong>{planningMessage}</strong></div>
-        <div className="planning-months">
-          {planningCoverage.map((month, index) => <span className={month.hasPlan ? "month-planned" : "month-unplanned"} key={toISO(month.monthStart)}><i>{month.hasPlan ? <Check size={12} /> : <CircleAlert size={12} />}</i><b>{index === 0 ? "Текущий · " : "Следующий · "}{MONTHS[month.monthStart.getMonth()]}</b><small>{month.hasPlan ? month.count + " " + pluralTasks(month.count) : "плана нет"}</small></span>)}
-        </div>
+      <section className="pulse" aria-label="Состояние клиента">
+        <button type="button" className={"tile " + (hasTwoMonthPlan ? "ok" : "bad")} onClick={() => { setGanttFilter("Все"); roadmapRef.current?.scrollIntoView({ behavior: "smooth" }); }}>
+          <span className="tile-icon">{hasTwoMonthPlan ? <Check size={18} /> : <CircleAlert size={18} />}</span>
+          <small>План работ на 2 месяца</small>
+          <strong>{hasTwoMonthPlan ? "Сформирован" : missingPlanMonths.length === 2 ? "Нет плана на 2 месяца" : "Нет плана на " + MONTHS[missingPlanMonths[0].monthStart.getMonth()].toLowerCase()}</strong>
+          <span className="month-pills">{planningCoverage.map((month) => <span key={toISO(month.monthStart)} className={month.hasPlan ? "yes" : "no"}>{MONTHS[month.monthStart.getMonth()]} · {month.hasPlan ? month.count + " " + pluralSprints(month.count) : "пусто"}</span>)}</span>
+        </button>
+        <button type="button" className={"tile " + (health.overdue ? "bad" : health.shifted ? "warn" : "ok")} onClick={() => { setGanttFilter(health.overdue ? "Просрочено" : "Все"); roadmapRef.current?.scrollIntoView({ behavior: "smooth" }); }}>
+          <span className="tile-icon"><ChartGantt size={18} /></span>
+          <small>Недельные спринты</small>
+          <strong>{health.overdue ? health.overdue + " " + plural(health.overdue, "просрочен", "просрочено", "просрочено") + " из " + health.current : "Все " + health.current + " в срок"}</strong>
+          <span className="tile-note">{health.shifted ? health.shifted + " " + plural(health.shifted, "перенесён", "перенесены", "перенесены") + " с причиной" : "Переносов нет"}</span>
+        </button>
+        <button type="button" className={"tile " + (closing.state === "late" ? "bad" : closing.state === "none" ? "warn" : "ok")} onClick={() => regularRef.current?.scrollIntoView({ behavior: "smooth" })}>
+          <span className="tile-icon"><Repeat2 size={18} /></span>
+          <small>Закрытие месяца</small>
+          <strong>{closing.state === "none" ? "Не заведено" : MONTHS[closing.month] + (closing.state === "late" ? " не закрыт" : closing.state === "ok" ? " закрыт" : " закрывается")}</strong>
+          <span className="tile-note">{closingNote}</span>
+        </button>
+        <button type="button" className={"tile " + (nextMeeting ? "ok" : "bad")} onClick={() => { if (nextMeeting) focusMeetingDate(nextMeeting.plannedDate); meetingsRef.current?.scrollIntoView({ behavior: "smooth" }); }}>
+          <span className="tile-icon"><CalendarDays size={18} /></span>
+          <small>Следующая встреча</small>
+          <strong>{nextMeeting ? formatDayShortMonth(nextMeeting.plannedDate) + ", " + nextMeeting.plannedTime : "Не запланирована"}</strong>
+          <span className="tile-note">{nextMeeting?.title || "Добавьте встречу"}</span>
+        </button>
       </section>
 
-      <section className="metrics" aria-label="Сводка">
-        <article className="metric"><span className="metric-icon metric-blue"><CalendarDays size={26} /></span><div><small>Ближайший дедлайн</small><strong>{nearestTask ? formatShortDate(nearestTask.endDate) : "Нет задач"}</strong></div><span className="metric-note">{nearestTask?.title || "Добавьте задачу"}</span></article>
-        <article className="metric"><span className="metric-icon metric-red"><CircleAlert size={26} /></span><div><small>Просрочено</small><strong className="danger">{overdueCount} {pluralTasks(overdueCount)}</strong></div><span className="metric-note">Требуют внимания</span></article>
-        <article className="metric"><span className="metric-icon metric-teal"><Clock3 size={26} /></span><div><small>Следующая встреча</small><strong>{nextMeeting ? formatShortDate(nextMeeting.plannedDate) + ", " + nextMeeting.plannedTime : "Не запланирована"}</strong></div><span className="metric-note">{nextMeeting?.title || "Добавьте встречу"}</span></article>
-      </section>
-
-      <section className="card roadmap-card">
+      <section className="card roadmap-card" ref={roadmapRef}>
         <div className="section-head">
           <div className="section-title-wrap"><h2>Дорожная карта</h2><nav>{(["Все", "В работе", "Просрочено"] as const).map((filter) => <button key={filter} className={ganttFilter === filter ? "active" : ""} onClick={() => setGanttFilter(filter)}>{filter}</button>)}</nav></div>
           <div className="roadmap-actions">
@@ -1866,7 +1884,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
           </div>
         </section>
 
-        <section className="card meetings-card">
+        <section className="card meetings-card" ref={meetingsRef}>
           <div className="compact-head"><h2>Календарь встреч и задач</h2><button className="primary" onClick={() => setModal({ kind: "meeting", item: null })}><Plus size={17} />Запланировать</button></div>
           <div className="calendar-filters">
             <div className="calendar-chips">
@@ -1913,7 +1931,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
         </section>
       </div>
 
-      <section className="card regular-card">
+      <section className="card regular-card" ref={regularRef}>
         <div className="compact-head regular-head">
           <div><h2>Регулярные задачи</h2><p>Поддержание отчётности после внедрения</p></div>
           <button className="primary" onClick={() => setModal({ kind: "regular-task", item: null })}><Plus size={17} />Создать регулярную задачу</button>
