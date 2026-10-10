@@ -906,13 +906,13 @@ function RegularPeriodDialog({
   );
 }
 
-export default function Dashboard({ initialData, serverToday, templates }: { initialData: DashboardData; serverToday: string; templates: TypicalTaskTemplate[] }) {
+export default function Dashboard({ initialData, initialStorage, serverToday, templates }: { initialData: DashboardData; initialStorage: "postgres" | "local" | null; serverToday: string; templates: TypicalTaskTemplate[] }) {
   const [data, setData] = useState<DashboardData>(initialData);
   const [activePage, setActivePage] = useState<"roadmap" | "policy">("roadmap");
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("loading");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(initialStorage ? "saved" : "loading");
   const [saveErrorMessage, setSaveErrorMessage] = useState("");
-  const [storageMode, setStorageMode] = useState<"postgres" | "local">("local");
+  const [storageMode, setStorageMode] = useState<"postgres" | "local">(initialStorage ?? "local");
   const [modal, setModal] = useState<ModalState>(null);
   // Выбор охвата для встречи из серии: удалить/поправить одну, хвост или всю серию.
   // Карточка встречи на это время закрывается, а её черновик ждёт здесь.
@@ -958,7 +958,10 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
   const today = useMemo(() => parseDate(todayKey), [todayKey]);
   const calendarMonth = useMemo(() => pickedCalendarMonth ?? startOfMonth(today), [pickedCalendarMonth, today]);
 
+  // Обычно данные уже пришли с сервера вместе со страницей. Запрос из браузера нужен
+  // только когда сервер не смог их прочитать — он и покажет ошибку в индикаторе.
   useEffect(() => {
+    if (initialStorage) return;
     const controller = new AbortController();
     fetch("/api/data", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -979,7 +982,7 @@ export default function Dashboard({ initialData, serverToday, templates }: { ini
         }
       });
     return () => controller.abort();
-  }, []);
+  }, [initialStorage]);
 
   const persist = useCallback(async (nextData: DashboardData) => {
     setSaveStatus("saving");
