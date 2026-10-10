@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { normalizePerson } from "@/components/person-select";
 import { checkpointDate, checkpointState } from "@/lib/checkpoint-dates";
-import { setCheckpointDone } from "@/lib/checkpoint-tracking";
+import { addClientRequest, changeClientRequest, isWaitingClient, removeClientRequest, requestDateError, setCheckpointDone } from "@/lib/checkpoint-tracking";
 import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, isValidDateValue, parseDate, weekdayName } from "@/lib/dates";
+import { plural } from "@/lib/plural";
 import type { Checkpoint, CheckpointGroup } from "@/lib/types";
 
 // Кольцевой индикатор «сделано из всего» — используется в таблице задач и в сводке спринтов.
@@ -143,6 +144,75 @@ function ScheduleChip({ item, today, open, onClick }: { item: Checkpoint; today:
   );
 }
 
+// Журнал запросов клиенту: даты кликабельны — их можно исправить или удалить ошибочный запрос;
+// новый запрос можно отметить задним числом.
+function ClientRequests({ item, today, onChange }: { item: Checkpoint; today: string; onChange: (next: Checkpoint) => void }) {
+  const requests = item.requests ?? [];
+  const [newDate, setNewDate] = useState(today);
+  const [editing, setEditing] = useState<{ from: string; value: string } | null>(null);
+  const [error, setError] = useState("");
+  const last = requests[requests.length - 1];
+  const ago = last ? differenceInDays(last, today) : 0;
+
+  function add() {
+    const problem = requestDateError(item, newDate, today);
+    if (problem) return setError(problem);
+    onChange(addClientRequest(item, newDate));
+    setNewDate(today);
+    setError("");
+  }
+
+  function saveEdit() {
+    if (!editing) return;
+    const problem = requestDateError(item, editing.value, today, editing.from);
+    if (problem) return setError(problem);
+    onChange(changeClientRequest(item, editing.from, editing.value));
+    setEditing(null);
+    setError("");
+  }
+
+  function remove() {
+    if (!editing) return;
+    onChange(removeClientRequest(item, editing.from));
+    setEditing(null);
+    setError("");
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // Escape отменяет правку даты, а не закрывает всю карточку задачи (см. SchedulePanel).
+    if (event.key !== "Escape" || !editing) return;
+    event.nativeEvent.stopImmediatePropagation();
+    setEditing(null);
+    setError("");
+  }
+
+  return (
+    <div className="cp-requests" onKeyDown={handleKeyDown}>
+      {requests.length > 0 && (
+        <div className="cp-requests-list">Запрошено:{requests.map((date) => editing?.from === date ? (
+          <span className="cp-request-edit" key={date}>
+            <input type="date" value={editing.value} max={today} aria-label="Дата запроса" onChange={(event) => setEditing({ from: date, value: event.target.value })} />
+            <button type="button" className="secondary" onClick={saveEdit}>Сохранить</button>
+            <button type="button" className="cp-link cp-link-danger" onClick={remove}>Удалить</button>
+            <button type="button" className="cp-link" onClick={() => { setEditing(null); setError(""); }}>Отмена</button>
+          </span>
+        ) : (
+          <button type="button" className="cp-request-date" key={date} title="Изменить или удалить" onClick={() => { setEditing({ from: date, value: date }); setError(""); }}>{formatDayMonth(date)}</button>
+        ))}</div>
+      )}
+      <div className="cp-requests-foot">
+        <span>{last ? (ago === 0 ? "Последний запрос сегодня" : "Последний запрос " + ago + " " + plural(ago, "день", "дня", "дней") + " назад") : ""}</span>
+        <span className="cp-request-add">
+          <label htmlFor={"request-" + item.code}>Дата запроса</label>
+          <input id={"request-" + item.code} type="date" value={newDate} max={today} onChange={(event) => setNewDate(event.target.value)} />
+          <button type="button" className="secondary" onClick={add}>Добавить запрос</button>
+        </span>
+      </div>
+      {error && <p className="cp-requests-error">{error}</p>}
+    </div>
+  );
+}
+
 export default function CheckpointsEditor({
   groups,
   nextCode,
@@ -174,6 +244,16 @@ export default function CheckpointsEditor({
   const [draftTitle, setDraftTitle] = useState("");
   const [draftNote, setDraftNote] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<Schedule>({ date: "", assignee: "" });
+  // Панели запросов у точек, где ждём клиента, при открытии карточки раскрыты.
+  const [requestPanels, setRequestPanels] = useState<Set<string>>(() => new Set(groups.flatMap((group) => group.items).filter(isWaitingClient).map((item) => item.code)));
+
+  function toggleRequests(code: string) {
+    setRequestPanels((current) => {
+      const next = new Set(current);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  }
 
   const items = groups.flatMap((group) => group.items);
   const done = items.filter((item) => item.done).length;
@@ -271,10 +351,14 @@ export default function CheckpointsEditor({
                 {item.done && item.doneAt
                   ? <span className="cp-done-at">сделано {formatDayShortMonth(item.doneAt)}</span>
                   : <ScheduleChip item={item} today={today} open={panel === item.code} onClick={() => setPanel(panel === item.code ? null : item.code)} />}
+                {!item.done && (isWaitingClient(item)
+                  ? <button type="button" className="cp-request is-waiting" aria-expanded={requestPanels.has(item.code)} onClick={() => toggleRequests(item.code)}>ждём клиента · {item.requests!.length} {plural(item.requests!.length, "запрос", "запроса", "запросов")}</button>
+                  : <button type="button" className="cp-request" aria-expanded={requestPanels.has(item.code)} onClick={() => toggleRequests(item.code)}>+ запрос клиенту</button>)}
                 {item.note && <button type="button" className={"info-button" + (openNotes.has(item.code) ? " info-open" : "")} title={item.noteTitle || "Пояснение"} aria-expanded={openNotes.has(item.code)} onClick={() => toggleNote(item.code)}>i</button>}
                 <button type="button" title="Изменить" aria-label={"Изменить точку " + item.code} onClick={() => startEdit(item)}><Pencil size={13} /></button>
               </span>
               {item.note && openNotes.has(item.code) && <div className="check-note"><b>{item.noteTitle || "Пояснение"}</b>{item.note}</div>}
+              {!item.done && requestPanels.has(item.code) && <ClientRequests item={item} today={today} onChange={(next) => patchItem(item.code, next)} />}
               {panel === item.code && (
                 <SchedulePanel value={{ date: item.date ?? "", assignee: item.assignee ?? "" }} onChange={(patch) => patchItem(item.code, patch)} days={days} today={today} people={people} onAddPerson={onAddPerson} onDone={() => setPanel(null)} />
               )}

@@ -592,6 +592,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .check-tools .cp-chip-done { color: #7b8798; }
 .check-tools .cp-chip.is-open { border-color: #85aadd; box-shadow: 0 0 0 3px rgba(42, 120, 223, .1); }
 .check-tools .cp-done-at { height: 22px; margin-right: 4px; padding: 0 8px; display: inline-flex; align-items: center; border: 1px solid #cce6da; border-radius: 11px; background: #fff; color: #087a59; font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.check-tools .cp-request { width: auto; height: 22px; margin-right: 4px; padding: 0 8px; display: inline-flex; align-items: center; border: 1px dashed #c9d3e0; border-radius: 11px; background: #fff; color: #536077; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.check-tools .cp-request:hover { border-color: #9db8dd; background: #f3f7fc; color: #354258; }
+.check-tools .cp-request.is-waiting { border-style: solid; border-color: #ecc98f; background: #fff8ec; color: #8a5208; }
+.cp-requests { grid-column: 3 / -1; margin: 4px 0 2px; padding: 10px 12px; display: grid; gap: 8px; border: 1px solid #ecc98f; border-radius: 8px; background: #fffaf2; }
+.cp-requests-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: #5b4a2f; font-size: 12px; }
+.cp-request-date { padding: 3px 8px; border: 1px solid #efd9b4; border-radius: 6px; background: #fff; color: #5b4a2f; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cp-request-date:hover { border-color: #d9a85a; background: #fff3df; }
+.cp-request-edit, .cp-request-add { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cp-request-edit { padding: 4px 6px; border: 1px solid #d9a85a; border-radius: 7px; background: #fff; }
+.cp-request-edit input, .cp-request-add input { height: 28px; padding: 0 6px; border: 1px solid #d6dde7; border-radius: 6px; background: #fff; font-size: 12px; }
+.cp-request-edit .secondary, .cp-request-add .secondary { min-height: 28px; padding: 0 10px; font-size: 11px; }
+.cp-link-danger { color: var(--red); }
+.cp-requests-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; color: #8a6a3a; font-size: 11px; }
+.cp-requests-error { margin: 0; color: var(--red); font-size: 11px; font-weight: 600; }
 .cp-panel { grid-column: 3 / -1; margin: 4px 0 6px; padding: 10px 12px; display: grid; gap: 10px; border: 1px solid #c9d6e8; border-radius: 8px; background: #fbfcfe; }
 .check-edit .cp-panel { grid-column: auto; margin: 0; padding: 0; border: 0; background: none; }
 .cp-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: start; }
