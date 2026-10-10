@@ -115,10 +115,11 @@ export function emptyWeek(): ControlWeek {
   return { marks: {}, notes: {}, answers: {} };
 }
 
-// Последние count недель, старые слева. Последняя — прошлая полная неделя: её и проверяют.
+// Последние count полных недель и текущая справа, старые слева.
+// Предпоследняя — прошлая полная неделя: её и проверяют; текущую можно отмечать по ходу.
 export function controlWeeks(today: string, count = CONTROL_WEEKS): string[] {
-  const last = addDays(startOfWeek(today), -7);
-  return Array.from({ length: count }, (_, index) => addDays(last, -7 * (count - 1 - index)));
+  const current = startOfWeek(today);
+  return Array.from({ length: count + 1 }, (_, index) => addDays(current, -7 * (count - index)));
 }
 
 // Клик по клетке: пусто → ✓ → ✗ → пусто.

@@ -114,8 +114,9 @@ export default function ControlBoard({ today }: { today: string }) {
   const panelRef = useRef<HTMLElement>(null);
 
   const weeks = useMemo(() => controlWeeks(today), [today]);
-  const latest = weeks[weeks.length - 1];
-  const current = selected && weeks.includes(selected) ? selected : latest;
+  const thisWeek = weeks[weeks.length - 1];
+  const due = weeks[weeks.length - 2];
+  const current = selected && weeks.includes(selected) ? selected : due;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -244,6 +245,7 @@ export default function ControlBoard({ today }: { today: string }) {
   const week = data.weeks[current] ?? emptyWeek();
   const badItems = CONTROL_ITEMS.filter((item) => week.marks[item.id] === "bad");
   const colClass = (weekStart: string) => "ctl-col" + (weekStart === current ? " is-selected" : "");
+  const weekTag = (weekStart: string) => weekStart === thisWeek ? "идёт" : weekStart === due ? "к проверке" : "";
 
   return (
     <div className="ctl">
@@ -262,13 +264,13 @@ export default function ControlBoard({ today }: { today: string }) {
                   <th key={weekStart} className={colClass(weekStart)}>
                     <button
                       type="button"
-                      className={"ctl-week" + (weekStart === latest ? " is-due" : "")}
+                      className={"ctl-week" + (weekStart === due ? " is-due" : "")}
                       title={formatWeekRange(weekStart)}
                       aria-pressed={weekStart === current}
                       onClick={() => setSelected(weekStart)}
                     >
                       <b>{day}</b>
-                      <small>{weekStart === latest ? "к проверке" : month}</small>
+                      <small>{weekTag(weekStart) || month}</small>
                     </button>
                   </th>
                 );
@@ -354,7 +356,7 @@ export default function ControlBoard({ today }: { today: string }) {
       <section className="ctl-card ctl-panel" ref={panelRef}>
         <div className="ctl-panel-head">
           <h2>Неделя {formatWeekRange(current)}</h2>
-          <span>{current === latest ? "к проверке" : (weeks.length - weeks.indexOf(current)) + " нед. назад"}</span>
+          <span>{weekTag(current) || (weeks.length - 1 - weeks.indexOf(current)) + " нед. назад"}</span>
         </div>
         <div className="ctl-cols">
           <div className="ctl-block">
