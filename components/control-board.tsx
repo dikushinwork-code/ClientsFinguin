@@ -37,13 +37,18 @@ function InfoTip({ label, children }: { label: string; children: ReactNode }) {
   const [pinned, setPinned] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  const open = hover || pinned;
+
   useEffect(() => {
-    if (!pinned) return;
+    if (!open) return;
     const onPointer = (event: MouseEvent) => {
       if (!ref.current?.contains(event.target as Node)) setPinned(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPinned(false);
+      if (event.key === "Escape") {
+        setHover(false);
+        setPinned(false);
+      }
     };
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);
@@ -51,9 +56,8 @@ function InfoTip({ label, children }: { label: string; children: ReactNode }) {
       document.removeEventListener("mousedown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [pinned]);
+  }, [open]);
 
-  const open = hover || pinned;
   return (
     <div className="ctl-tip-wrap" ref={ref} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <button
