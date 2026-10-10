@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import ControlBoard from "@/components/control-board";
 import AccountingPolicy from "@/components/accounting-policy";
 import CheckpointsEditor, { formatCheckpointDate, ProgressRing } from "@/components/checkpoints-editor";
 import ModalShell from "@/components/modal-shell";
@@ -925,9 +926,16 @@ function RegularPeriodDialog({
   );
 }
 
+type PageKey = "roadmap" | "policy" | "control";
+const PAGES: Array<{ key: PageKey; title: string }> = [
+  { key: "roadmap", title: "Дорожная карта" },
+  { key: "policy", title: "Учетная политика" },
+  { key: "control", title: "Руководителю" },
+];
+
 export default function Dashboard({ initialData, initialStorage, serverToday, templates }: { initialData: DashboardData; initialStorage: "postgres" | "local" | null; serverToday: string; templates: TypicalTaskTemplate[] }) {
   const [data, setData] = useState<DashboardData>(initialData);
-  const [activePage, setActivePage] = useState<"roadmap" | "policy">("roadmap");
+  const [activePage, setActivePage] = useState<PageKey>("roadmap");
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(initialStorage ? "saved" : "loading");
   const [saveErrorMessage, setSaveErrorMessage] = useState("");
@@ -1695,29 +1703,23 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               if (event.key === "Escape") setPageMenuOpen(false);
             }}
           >
-            <h1>{activePage === "roadmap" ? "Дорожная карта" : "Учетная политика"}</h1>
+            <h1>{PAGES.find((page) => page.key === activePage)?.title}</h1>
             <ChevronDown size={20} aria-hidden="true" />
           </button>
           {pageMenuOpen ? (
             <div className="page-switcher-menu" role="menu" aria-label="Разделы проекта">
-              <button
-                type="button"
-                role="menuitem"
-                className={activePage === "roadmap" ? "active" : ""}
-                onClick={() => { setActivePage("roadmap"); setPageMenuOpen(false); }}
-              >
-                Дорожная карта
-                {activePage === "roadmap" ? <Check size={16} aria-hidden="true" /> : null}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className={activePage === "policy" ? "active" : ""}
-                onClick={() => { setActivePage("policy"); setPageMenuOpen(false); }}
-              >
-                Учетная политика
-                {activePage === "policy" ? <Check size={16} aria-hidden="true" /> : null}
-              </button>
+              {PAGES.map((page) => (
+                <button
+                  key={page.key}
+                  type="button"
+                  role="menuitem"
+                  className={activePage === page.key ? "active" : ""}
+                  onClick={() => { setActivePage(page.key); setPageMenuOpen(false); }}
+                >
+                  {page.title}
+                  {activePage === page.key ? <Check size={16} aria-hidden="true" /> : null}
+                </button>
+              ))}
             </div>
           ) : null}
         </div>
@@ -2065,7 +2067,9 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
           </div>
         </div>
       </section>
-      </> : <AccountingPolicy reports={data.reports} people={data.people} onChange={(reports) => commit((current) => ({ ...current, reports }))} />}
+      </> : activePage === "policy"
+        ? <AccountingPolicy reports={data.reports} people={data.people} onChange={(reports) => commit((current) => ({ ...current, reports }))} />
+        : <ControlBoard today={todayKey} />}
 
       {modal?.kind === "task" && <TaskDialog key={modal.item?.id ?? "new"} item={modal.item} tasks={data.tasks} people={data.people} today={todayKey} focusDate={modal.focusDate} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onSave={saveTask} onDelete={deleteTask} onOpenTask={(task) => setModal({ kind: "task", item: task })} />}
       {modal?.kind === "template" && <TemplateDialog templates={templates} tasks={data.tasks} people={data.people} today={todayKey} onAddPerson={addPerson} onDeletePerson={deletePerson} onClose={() => setModal(null)} onAdd={addTemplateTasks} />}

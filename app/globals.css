@@ -1493,3 +1493,67 @@ button.wk-group-title:hover, button.wk-shift-top:hover { color: var(--navy); }
   .wk-item { grid-template-columns: 16px 52px minmax(0, 1fr); }
   .wk-item time { grid-column: 3; }
 }
+
+/* Вкладка «Руководителю»: матрица «пункт × неделя» и комментарии выбранной недели */
+.ctl { display: grid; gap: 16px; max-width: 1080px; }
+.ctl-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.ctl-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px 8px; }
+.ctl-head h2, .ctl-panel-head h2, .ctl-lock h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.ctl-error { margin: 0; color: var(--red); font-size: 13px; }
+.ctl-muted { color: var(--muted); }
+
+.ctl-grid { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.ctl-grid th, .ctl-grid td { padding: 0; }
+.ctl-grid tbody tr + tr > * { border-top: 1px solid var(--soft-line); }
+.ctl-grid tbody tr.ctl-sep > * { border-top-color: var(--line); }
+.ctl-grid .ctl-name { width: 280px; padding: 6px 12px 6px 16px; text-align: left; font-weight: 500; border-right: 1px solid var(--soft-line); }
+.ctl-grid .ctl-col { width: 64px; padding: 4px 3px; text-align: center; }
+.ctl-grid .ctl-col.is-selected { background: var(--blue-soft); }
+.ctl-grid thead .ctl-col.is-selected { border-radius: 10px 10px 0 0; }
+.ctl-grid .ctl-total { width: 90px; padding: 4px 12px; text-align: center; color: var(--muted); font-size: 12px; font-weight: 500; border-left: 1px solid var(--soft-line); }
+.ctl-total b { color: var(--red); }
+
+.ctl-week { width: 100%; padding: 4px 0; border: 0; border-radius: 8px; background: none; display: grid; line-height: 1.15; color: var(--muted); }
+.ctl-week:hover { background: var(--soft-line); }
+.ctl-week b { font-size: 14px; color: var(--text); }
+.ctl-week small { font-size: 11px; }
+.ctl-week.is-due small { color: var(--blue); font-weight: 600; }
+.is-selected .ctl-week b { color: var(--navy); }
+
+.ctl-row-title { display: inline-flex; align-items: center; gap: 6px; }
+.ctl-cell { position: relative; width: 36px; height: 30px; border: 1px dashed var(--line); border-radius: 7px; background: transparent; color: var(--muted); font-size: 15px; font-weight: 700; }
+.ctl-cell:hover { border-color: var(--muted); }
+.ctl-cell.is-ok { border: 1px solid transparent; background: var(--teal-soft); color: var(--teal); }
+.ctl-cell.is-bad { border: 1px solid transparent; background: var(--red-soft); color: var(--red); }
+.ctl-cell.has-note::after { content: ""; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--red); }
+.ctl-score { font-size: 12px; font-weight: 600; color: var(--muted); }
+.ctl-score.is-ok { color: var(--teal); }
+.ctl-score.is-bad { color: var(--red); }
+.ctl-comment { width: 36px; height: 28px; border: 0; border-radius: 7px; background: none; color: var(--muted); display: inline-grid; place-items: center; }
+.ctl-comment:hover { background: var(--soft-line); }
+.ctl-comment.is-filled { color: var(--blue); background: var(--blue-soft); }
+
+.ctl-tip-wrap { position: relative; display: inline-flex; }
+.ctl-info { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); display: inline-grid; place-items: center; }
+.ctl-info:hover, .ctl-info[aria-expanded="true"] { color: var(--blue); }
+.ctl-tip { position: absolute; z-index: 30; top: calc(100% + 6px); left: -8px; width: 400px; padding: 12px 14px; border-radius: 10px; background: var(--text); color: #eef2f8; font-size: 13px; font-weight: 400; line-height: 1.45; letter-spacing: 0; text-align: left; text-transform: none; box-shadow: 0 8px 24px rgba(10, 20, 40, 0.25); }
+.ctl-tip p { margin: 0 0 6px; color: #a9b4c7; font-size: 12px; }
+.ctl-tip p.ctl-tip-h { margin: 8px 0 4px; color: inherit; font-size: 13px; font-weight: 600; }
+.ctl-tip ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+
+.ctl-panel { padding: 14px 16px 16px; display: grid; gap: 14px; }
+.ctl-panel-head { display: flex; align-items: baseline; gap: 10px; }
+.ctl-panel-head span { color: var(--muted); font-size: 13px; font-weight: 400; }
+.ctl-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+.ctl-block { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.ctl-block-title { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.ctl-field { display: grid; gap: 4px; font-size: 13px; font-weight: 500; }
+.ctl-field .is-bad { color: var(--red); }
+.ctl-field textarea { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; font-weight: 400; line-height: 1.4; resize: vertical; field-sizing: content; }
+.ctl-empty { margin: 0; color: var(--muted); font-size: 13px; }
+
+.ctl-lock { width: 320px; margin: 48px auto; padding: 20px; display: grid; gap: 10px; }
+.ctl-lock input { height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; }
+.ctl-lock button { height: 38px; border: 0; border-radius: 9px; background: var(--navy); color: #fff; font-weight: 600; }
+.ctl-lock button:disabled { opacity: 0.5; cursor: default; }
+.ctl-state { padding: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); }
