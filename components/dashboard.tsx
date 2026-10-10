@@ -509,7 +509,7 @@ function TaskDialog({
     if (askReason && item) {
       const shiftError = validateShift(shift.reason, shift.note);
       if (shiftError) return setError(shiftError);
-      saved = appendShift(item, saved, { reason: shift.reason as ShiftReason, holdCode: shift.holdCode, note: shift.note }, today);
+      saved = appendShift(item, saved, { reason: shift.reason as ShiftReason, holdCode: openCheckpoints.some((checkpoint) => checkpoint.code === shift.holdCode) ? shift.holdCode : "", note: shift.note }, today);
     }
     onSave(saved);
   }
@@ -1797,7 +1797,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
                 <button type="button" className="icon-button" aria-label="Следующая неделя" disabled={weekStart >= weekRange.last} onClick={() => setPickedWeek(addDays(weekStart, 7) >= weekRange.last ? null : addDays(weekStart, 7))}><ChevronRight size={16} /></button>
               </div>
             ) : (<>
-            {parentIds.length > 0 && <button type="button" className="secondary" onClick={() => setCollapsedTaskIds(anyCollapsed ? new Set() : new Set(parentIds))}>{anyCollapsed ? "Развернуть всё" : "Свернуть всё"}</button>}
+            {parentIds.length > 0 && ganttFilter === "Все" && <button type="button" className="secondary" onClick={() => setCollapsedTaskIds(anyCollapsed ? new Set() : new Set(parentIds))}>{anyCollapsed ? "Развернуть всё" : "Свернуть всё"}</button>}
             <div className="baseline-control" onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBaselineMenuOpen(false);
             }}>
@@ -1853,7 +1853,7 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               const shifts = isWorkTask(task, data.tasks) ? task.shifts ?? [] : [];
               const lastShift = shifts[shifts.length - 1];
               const waiting = isWorkTask(task, data.tasks) && taskCheckpoints(task).some(isWaitingClient);
-              const overdueNow = isWorkTask(task, data.tasks) && isTaskOverdue(task, today);
+              const overdueNow = isWorkTask(task, data.tasks) && task.status !== "Завершено" && task.endDate < todayKey;
               return (
                 <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent") + (freshTaskIds.has(task.id) ? " fresh" : "")} key={task.id} data-task-id={task.id} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") setModal({ kind: "task", item: task });
