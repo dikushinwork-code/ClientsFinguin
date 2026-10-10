@@ -90,6 +90,8 @@ export interface Checkpoint {
   noteTitle: string;   // заголовок пояснения; пустой, если пояснения нет
   note: string;        // текст пояснения
   done: boolean;
+  date?: string;       // срок «ГГГГ-ММ-ДД»; без него точка не выводится на диаграмму Ганта
+  assignee?: string;   // ответственный за точку; пусто — отвечает ответственный подзадачи
 }
 
 export interface CheckpointGroup {
