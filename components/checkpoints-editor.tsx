@@ -191,7 +191,7 @@ function ClientRequests({ item, today, onChange }: { item: Checkpoint; today: st
       {requests.length > 0 && (
         <div className="cp-requests-list">Запрошено:{requests.map((date) => editing?.from === date ? (
           <span className="cp-request-edit" key={date}>
-            <input type="date" value={editing.value} max={today} aria-label="Дата запроса" onChange={(event) => setEditing({ from: date, value: event.target.value })} />
+            <input type="date" value={editing.value} max={today} aria-label="Дата запроса" onChange={(event) => setEditing({ from: date, value: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveEdit(); } }} />
             <button type="button" className="secondary" onClick={saveEdit}>Сохранить</button>
             <button type="button" className="cp-link cp-link-danger" onClick={remove}>Удалить</button>
             <button type="button" className="cp-link" onClick={() => { setEditing(null); setError(""); }}>Отмена</button>
@@ -204,7 +204,7 @@ function ClientRequests({ item, today, onChange }: { item: Checkpoint; today: st
         <span>{last ? (ago === 0 ? "Последний запрос сегодня" : "Последний запрос " + ago + " " + plural(ago, "день", "дня", "дней") + " назад") : ""}</span>
         <span className="cp-request-add">
           <label htmlFor={"request-" + item.code}>Дата запроса</label>
-          <input id={"request-" + item.code} type="date" value={newDate} max={today} onChange={(event) => setNewDate(event.target.value)} />
+          <input id={"request-" + item.code} type="date" value={newDate} max={today} onChange={(event) => setNewDate(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(); } }} />
           <button type="button" className="secondary" onClick={add}>Добавить запрос</button>
         </span>
       </div>
