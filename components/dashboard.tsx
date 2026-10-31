@@ -33,6 +33,7 @@ import PersonSelect, { normalizePerson } from "@/components/person-select";
 import type { PersonPickerProps } from "@/components/person-select";
 import { ShiftHistory, ShiftReasonFields } from "@/components/shift-reason";
 import TemplateDialog from "@/components/template-dialog";
+import { useDragSort } from "@/components/use-drag-sort";
 import WeekReportView from "@/components/week-report";
 import { activeTasks, archiveCount, archiveTask, isArchived, removeTask, restoreTask } from "@/lib/archive";
 import { addDays, differenceInDays, formatDayMonth, formatDayShortMonth, parseDate, startOfWeek, toISO } from "@/lib/dates";
@@ -40,6 +41,7 @@ import { formatWeekRange, weekAgeLabel, weekBounds } from "@/lib/week-report";
 import { closingMonthKey, isWorkTask, monthClosing, parentSummary, sprintHealth } from "@/lib/roadmap-pulse";
 import MonthClosingPopover from "@/components/month-closing-popover";
 import { plural } from "@/lib/plural";
+import { canDropTask, moveTask } from "@/lib/reorder";
 import { appendShift, needsShiftReason, originalEndDate, shiftReasonInfo, validateShift } from "@/lib/task-shifts";
 import {
   frequencyTitle,
@@ -1371,6 +1373,11 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
     if (task) showToast("В архиве: " + task.title + ". Вернуть можно во вкладке «Архив»");
   }
 
+  const taskSort = useDragSort(
+    (dragId, targetId) => canDropTask(data.tasks, dragId, targetId),
+    (dragId, targetId, place) => commit((current) => ({ ...current, tasks: moveTask(current.tasks, dragId, targetId, place) })),
+  );
+
   function restoreTaskById(id: string) {
     const task = data.tasks.find((item) => item.id === id);
     commit((current) => ({ ...current, tasks: restoreTask(current.tasks, id) }));
@@ -1899,9 +1906,10 @@ export default function Dashboard({ initialData, initialStorage, serverToday, te
               const waiting = isWorkTask(task, liveTasks) && taskCheckpoints(task).some(isWaitingClient);
               const overdueNow = isWorkTask(task, liveTasks) && task.status !== "Завершено" && task.endDate < todayKey;
               return (
-                <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent") + (freshTaskIds.has(task.id) ? " fresh" : "")} key={task.id} data-task-id={task.id} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
+                <div className={"task-table-row " + (task.parentId ? "task-child" : "task-parent") + (freshTaskIds.has(task.id) ? " fresh" : "") + taskSort.rowClass(task.id)} key={task.id} data-task-id={task.id} {...taskSort.rowProps(task.id)} role="button" tabIndex={0} onClick={() => setModal({ kind: "task", item: task })} onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") setModal({ kind: "task", item: task });
                 }}>
+                  {taskSort.handle(task.id)}
                   <span className="task-title-cell">
                     {!task.parentId && childCount > 0 && <button type="button" className="task-toggle" aria-label={isCollapsed ? "Развернуть спринты" : "Свернуть спринты"} aria-expanded={!isCollapsed} onClick={(event) => { event.stopPropagation(); toggleParent(task.id); }}>{isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>}
                     {!task.parentId && childCount === 0 && <span className="toggle-spacer" />}
